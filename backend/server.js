@@ -273,6 +273,30 @@ app.post('/api/attempts/:id/submit', auth, async (req, res) => {
   }
 });
 
+// ===== إضافة: إنشاء حساب الأدمن الافتراضي تلقائياً إذا كانت القاعدة فارغة =====
+const createDefaultAdmin = async () => {
+  try {
+    const adminCount = await Admin.countDocuments();
+    if (adminCount === 0) {
+      const hashedPassword = await bcrypt.hash('admin123456', 10); // كلمة السر الافتراضية
+      await Admin.create({
+        username: 'admin',
+        password: hashedPassword,
+        name: 'المدير العام (افتراضي)',
+        isSuper: true
+      });
+      console.log('✅ تم إنشاء حساب الأدمن الافتراضي بنجاح!');
+      console.log('👤 اسم المستخدم: admin');
+      console.log('🔑 كلمة المرور: admin123456');
+    }
+  } catch (error) {
+    console.error('❌ خطأ أثناء إنشاء حساب الأدمن:', error);
+  }
+};
+
+// استدعاء الدالة لتعمل بمجرد تشغيل السيرفر
+createDefaultAdmin();
+
 // ===== Start =====
 const PORT = process.env.PORT || 4000;
 app.use(express.static(path.join(__dirname, '../')));
