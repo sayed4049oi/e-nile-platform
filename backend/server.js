@@ -273,12 +273,17 @@ app.post('/api/attempts/:id/submit', auth, async (req, res) => {
   }
 });
 
-// ===== إضافة: إنشاء حساب الأدمن الافتراضي تلقائياً إذا كانت القاعدة فارغة =====
-const createDefaultAdmin = async () => {
+// ===== Start =====
+const PORT = process.env.PORT || 4000;
+app.use(express.static(path.join(__dirname, '../')));
+app.get('*', (req, res) => res.sendFile(path.join(__dirname, '../index.html')));
+
+// ===== إضافة آمنة: إنشاء الأدمن بعد نجاح الاتصال بقاعدة البيانات =====
+mongoose.connection.once('open', async () => {
   try {
     const adminCount = await Admin.countDocuments();
     if (adminCount === 0) {
-      const hashedPassword = await bcrypt.hash('admin123456', 10); // كلمة السر الافتراضية
+      const hashedPassword = await bcrypt.hash('admin123456', 10);
       await Admin.create({
         username: 'admin',
         password: hashedPassword,
@@ -290,15 +295,8 @@ const createDefaultAdmin = async () => {
       console.log('🔑 كلمة المرور: admin123456');
     }
   } catch (error) {
-    console.error('❌ خطأ أثناء إنشاء حساب الأدمن:', error);
+    console.error('❌ خطأ أثناء إنشاء الأدمن:', error);
   }
-};
+});
 
-// استدعاء الدالة لتعمل بمجرد تشغيل السيرفر
-createDefaultAdmin();
-
-// ===== Start =====
-const PORT = process.env.PORT || 4000;
-app.use(express.static(path.join(__dirname, '../')));
-app.get('*', (req, res) => res.sendFile(path.join(__dirname, '../index.html')));
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
