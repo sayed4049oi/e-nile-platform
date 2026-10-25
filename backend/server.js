@@ -277,4 +277,18 @@ app.post('/api/attempts/:id/submit', auth, async (req, res) => {
 const PORT = process.env.PORT || 4000;
 app.use(express.static(path.join(__dirname, '../')));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, '../index.html')));
+// كود إضافة الأدمن تلقائياً
+async function seedAdmin() {
+  const count = await Admin.countDocuments();
+  if (count === 0) {
+    await Admin.create({
+      username: 'admin',
+      password: await bcrypt.hash('admin123', 10),
+      name: 'المدير العام',
+      isSuper: true
+    });
+    console.log('✅ Default admin created: admin / admin123');
+  }
+}
+seedAdmin();
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
