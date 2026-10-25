@@ -1,4 +1,4 @@
-const API = window.location.protocol === 'file:' ? 'http://localhost:4000/api' : `http://${window.location.hostname}:4000/api`;
+const API = 'https://e-nile-platform-1.onrender.com/api';
 let token = localStorage.getItem('token') || null;
 let user = JSON.parse(localStorage.getItem('user')) || null;
 const app = document.getElementById('app');
