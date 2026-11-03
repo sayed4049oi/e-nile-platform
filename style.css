@@ -35,6 +35,90 @@ button:hover { background: var(--primary-light); }
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; }
 .modal-content { background: var(--white); padding: 24px; border-radius: 12px; width: 90%; max-width: 500px; }
 
+.admin-sidebar {
+    width: 248px;
+    flex-shrink: 0;
+    transition: width 0.25s ease;
+}
+.admin-sidebar.collapsed { width: 78px; }
+.admin-sidebar .sidebar-label {
+    opacity: 1;
+    max-width: 180px;
+    overflow: hidden;
+    white-space: nowrap;
+    transition: opacity 0.18s ease, max-width 0.25s ease, margin 0.25s ease;
+}
+.admin-sidebar.collapsed .sidebar-label {
+    opacity: 0;
+    max-width: 0;
+    margin-left: 0;
+    margin-right: 0;
+}
+.sidebar-toggle {
+    position: absolute;
+    left: 10px;
+    bottom: -13px;
+    z-index: 2;
+    width: 27px !important;
+    height: 27px;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: 2px solid #1e3a8a;
+    border-radius: 50%;
+    background: #3b82f6;
+    color: #fff;
+    font-size: 11px;
+}
+.sidebar-toggle:hover { background: #60a5fa; }
+.admin-sidebar.collapsed .sidebar-toggle i { transform: rotate(180deg); }
+.sidebar-link {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-height: 48px;
+    padding: 12px 15px;
+    border-radius: 13px;
+    color: #dbeafe;
+    cursor: pointer;
+    font-weight: 700;
+    transition: background 0.2s ease, color 0.2s ease, justify-content 0.2s ease;
+}
+.sidebar-link i { width: 22px; flex-shrink: 0; text-align: center; font-size: 18px; }
+.sidebar-link:hover, .sidebar-link.active { background: #1e40af; color: #fff; }
+.sidebar-link.danger { margin-top: 16px; border-top: 1px solid #1e40af; color: #fecaca; }
+.sidebar-link.danger:hover, .sidebar-link.danger.active { background: #dc2626; color: #fff; }
+.admin-sidebar.collapsed .sidebar-link { justify-content: center; padding-inline: 0; }
+.admin-sidebar.collapsed .sidebar-link:hover::after {
+    content: attr(title);
+    position: absolute;
+    right: 68px;
+    z-index: 20;
+    width: max-content;
+    max-width: 180px;
+    padding: 7px 10px;
+    border-radius: 8px;
+    background: #0f172a;
+    color: #fff;
+    font-size: 12px;
+    box-shadow: 0 5px 15px rgb(0 0 0 / 0.2);
+}
+.admin-sidebar.collapsed .sidebar-footer { padding-inline: 10px; }
+.sidebar-logout {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    min-height: 42px;
+    padding: 9px 12px;
+    margin: 0 !important;
+    border-radius: 10px;
+    background: #ef4444;
+    color: #fff;
+    font-weight: 700;
+}
+.sidebar-logout:hover { background: #dc2626; }
+
 @media (max-width: 640px) {
     body { font-size: 14px; }
     .container { padding: 12px; }
@@ -42,9 +126,11 @@ button:hover { background: var(--primary-light); }
     button, input, select, textarea { font-size: 15px; }
     .camera-preview { width: 120px; height: 90px; bottom: 10px; left: 10px; }
     #app .h-screen { min-height: 100vh; height: auto; }
-    #app aside.w-64 { width: 100% !important; min-height: auto; }
-    #app aside.w-64 nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; padding: 8px; }
-    #app aside.w-64 nav a { padding: 9px 8px; font-size: 12px; }
+    #app .admin-sidebar, #app .admin-sidebar.collapsed { width: 100% !important; min-height: auto; }
+    #app .admin-sidebar .sidebar-label, #app .admin-sidebar.collapsed .sidebar-label { opacity: 1; max-width: 180px; }
+    #app .admin-sidebar .sidebar-toggle { display: none; }
+    #app .admin-sidebar nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; padding: 8px; }
+    #app .admin-sidebar .sidebar-link { justify-content: flex-start; padding: 9px 8px; font-size: 12px; }
     #app main.flex-1 > header { height: auto; min-height: 72px; padding: 12px 16px; flex-wrap: wrap; gap: 10px; }
     #app main.flex-1 > header h2 { font-size: 18px; }
     #app main.flex-1 > header > div { width: 100%; overflow-x: auto; }

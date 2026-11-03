@@ -74,11 +74,19 @@ async function doLogin(type) {
 const logout = () => { localStorage.clear(); location.reload(); };
 
 // ================= ADMIN =================
+function toggleSidebar() {
+    const sidebar = document.getElementById('admin-sidebar');
+    if (!sidebar) return;
+    sidebar.classList.toggle('collapsed');
+    localStorage.setItem('adminSidebarCollapsed', sidebar.classList.contains('collapsed') ? '1' : '0');
+}
+
 async function renderAdminDashboard(view = 'students', deptId = null, subId = null, roomId = null) {
     if (view === 'departments' || view === 'subjects' || view === 'subject-details' || view === 'exam-builder') {
         const [resDepts, resSubs] = await Promise.all([fetch(API + '/departments', { headers: authHeaders() }), fetch(API + '/subjects', { headers: authHeaders() })]);
         globalDepts = await resDepts.json(); globalSubjects = await resSubs.json();
     }
+
     if (view === 'subject-details' || view === 'rooms' || view === 'room-details' || view === 'exam-builder') {
         const resRooms = await fetch(API + '/rooms', { headers: authHeaders() }); globalRooms = await resRooms.json();
     }
@@ -91,16 +99,16 @@ async function renderAdminDashboard(view = 'students', deptId = null, subId = nu
 
     app.innerHTML = `
     <div class="flex h-screen bg-gray-50 overflow-hidden">
-        <aside class="w-64 bg-primary text-white flex flex-col shadow-2xl">
-            <div class="h-20 flex items-center justify-center gap-3 border-b border-blue-800"><img src="logo.jpg" alt="شعار كلية شرق النيل" class="w-12 h-12 object-contain rounded-lg bg-white"><span class="text-xl font-bold">كلية شرق النيل</span></div>
-            <nav class="flex-1 p-4 space-y-2">
-                <a onclick="renderAdminDashboard('students')" class="flex items-center px-4 py-3 ${view==='students' ? 'bg-blue-800' : 'hover:bg-blue-800'} rounded-xl font-semibold cursor-pointer"><i class="fa-solid fa-users w-6"></i> قائمة الطلاب</a>
-                <a onclick="renderAdminDashboard('departments')" class="flex items-center px-4 py-3 ${view==='departments' || view==='subjects' || view==='subject-details' || view==='exam-builder' ? 'bg-blue-800' : 'hover:bg-blue-800'} rounded-xl font-semibold cursor-pointer"><i class="fa-solid fa-building-columns w-6"></i> الأقسام والمواد</a>
-                <a onclick="renderAdminDashboard('rooms')" class="flex items-center px-4 py-3 ${view==='rooms' || view==='room-details' ? 'bg-blue-800' : 'hover:bg-blue-800'} rounded-xl font-semibold cursor-pointer"><i class="fa-solid fa-door-open w-6"></i> كل القاعات</a>
-                ${user.isSuper ? `<a onclick="renderAdminDashboard('admins')" class="flex items-center px-4 py-3 ${view==='admins' ? 'bg-blue-800' : 'hover:bg-blue-800'} rounded-xl font-semibold cursor-pointer"><i class="fa-solid fa-users-gear w-6"></i> إدارة الأدمنز</a>` : ''}
-                ${user.isSuper ? `<a onclick="renderAdminDashboard('settings')" class="flex items-center px-4 py-3 ${view==='settings' ? 'bg-red-600' : 'hover:bg-red-600 text-red-200'} rounded-xl font-semibold cursor-pointer mt-4 border-t border-blue-800"><i class="fa-solid fa-triangle-exclamation w-6"></i> إعدادات النظام</a>` : ''}
+        <aside id="admin-sidebar" class="admin-sidebar bg-primary text-white flex flex-col shadow-2xl">
+            <div class="h-20 flex items-center justify-center gap-3 border-b border-blue-800 relative"><img src="logo.jpg" alt="شعار كلية شرق النيل" class="w-12 h-12 object-contain rounded-lg bg-white"><span class="sidebar-label text-xl font-bold">كلية شرق النيل</span><button onclick="toggleSidebar()" title="توسيع أو تصغير القائمة" class="sidebar-toggle"><i class="fa-solid fa-angles-left"></i></button></div>
+            <nav class="flex-1 p-3 space-y-2">
+                <a title="قائمة الطلاب" onclick="renderAdminDashboard('students')" class="sidebar-link ${view==='students' ? 'active' : ''}"><i class="fa-solid fa-users"></i><span class="sidebar-label">قائمة الطلاب</span></a>
+                <a title="الأقسام والمواد" onclick="renderAdminDashboard('departments')" class="sidebar-link ${view==='departments' || view==='subjects' || view==='subject-details' || view==='exam-builder' ? 'active' : ''}"><i class="fa-solid fa-building-columns"></i><span class="sidebar-label">الأقسام والمواد</span></a>
+                <a title="كل القاعات" onclick="renderAdminDashboard('rooms')" class="sidebar-link ${view==='rooms' || view==='room-details' ? 'active' : ''}"><i class="fa-solid fa-door-open"></i><span class="sidebar-label">كل القاعات</span></a>
+                ${user.isSuper ? `<a title="إدارة الأدمنز" onclick="renderAdminDashboard('admins')" class="sidebar-link ${view==='admins' ? 'active' : ''}"><i class="fa-solid fa-users-gear"></i><span class="sidebar-label">إدارة الأدمنز</span></a>` : ''}
+                ${user.isSuper ? `<a title="إعدادات النظام" onclick="renderAdminDashboard('settings')" class="sidebar-link danger ${view==='settings' ? 'active' : ''}"><i class="fa-solid fa-gear"></i><span class="sidebar-label">إعدادات النظام</span></a>` : ''}
             </nav>
-            <div class="p-4 border-t border-blue-800"><div class="flex items-center mb-4"><div class="w-10 h-10 rounded-full bg-blue-400 flex items-center justify-center font-bold text-lg">${user.name[0]}</div><div class="mr-3"><p class="font-bold text-sm">${user.name}</p><p class="text-xs text-blue-300">${user.isSuper ? 'مدير عام' : 'أدمن'}</p></div></div><button onclick="logout()" class="w-full py-2 bg-red-500 hover:bg-red-600 rounded-lg font-bold">خروج</button></div>
+            <div class="sidebar-footer p-3 border-t border-blue-800"><div class="flex items-center mb-3"><div class="w-10 h-10 shrink-0 rounded-full bg-blue-400 flex items-center justify-center font-bold text-lg">${user.name[0]}</div><div class="sidebar-label mr-3 min-w-0"><p class="font-bold text-sm truncate">${user.name}</p><p class="text-xs text-blue-300">${user.isSuper ? 'مدير عام' : 'أدمن'}</p></div></div><button onclick="logout()" title="خروج" class="sidebar-logout"><i class="fa-solid fa-right-from-bracket"></i><span class="sidebar-label">خروج</span></button></div>
         </aside>
         <main class="flex-1 flex flex-col overflow-y-auto">
             <header class="bg-white shadow-sm h-20 flex items-center px-8 justify-between">
@@ -119,6 +127,7 @@ async function renderAdminDashboard(view = 'students', deptId = null, subId = nu
             <div class="p-8" id="admin-content"></div>
         </main>
     </div>`;
+    if (localStorage.getItem('adminSidebarCollapsed') === '1') document.getElementById('admin-sidebar')?.classList.add('collapsed');
 
     if(view === 'students') loadStudentsList();
     else if(view === 'departments') loadDepartments();
