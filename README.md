@@ -17,6 +17,8 @@ I built this since 2023 using a phone and old laptop, learning Python and web de
 
 The frontend is served by the backend so that API requests and the static files use the same origin.
 
-**AI question generation:** The super admin can add multiple AI providers from the system settings page. Each provider supports either Gemini API or an OpenAI-compatible endpoint, with an encrypted key, custom base URL, and optional model; when the model is blank, the backend discovers a suitable model from the provider. Set `APP_ENCRYPTION_KEY` in Render to a long random secret; it is required to encrypt saved keys. Existing `GEMINI_API_KEY` and `GROK_API_KEY` environment variables remain supported as a legacy fallback. Never put API keys in frontend files or commit them.
+**AI question generation:** The super admin can add any number of OpenAI-compatible AI APIs from the system settings page. Only the API name, base URL, and key are required; the model is optional and is discovered automatically when the provider exposes `/models`. Choose whether to use one active provider or all active providers together. Keys are encrypted with `APP_ENCRYPTION_KEY` and are never returned in full or committed to the project.
+
+**Languages and scrolling:** The interface supports Arabic and English from the fixed language control. The selected language is stored per browser, updates document direction (`rtl`/`ltr`), and the admin/student/exam layouts remain vertically scrollable on desktop and mobile.
 
 Built by ALSayed Omer - aspiring Computer Science student, Fall 2027.

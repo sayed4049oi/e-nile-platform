@@ -1,7 +1,81 @@
 const API = 'https://e-nile-platform.onrender.com/api';
+const language = localStorage.getItem('language') || 'ar';
+const translations = {
+    'نظام الامتحانات': 'Examination System', 'طالب': 'Student', 'إدارة': 'Administration', 'الرقم الجامعي': 'University ID',
+    'دخول': 'Login', 'خروج': 'Logout', 'لوحة التحكم': 'Dashboard', 'قائمة الطلاب': 'Students', 'الأقسام والمواد': 'Departments & Subjects',
+    'كل القاعات': 'All Rooms', 'إعدادات النظام': 'System Settings', 'إدارة الأدمنز': 'Admin Management', 'مدير عام': 'Super Admin',
+    'أدمن': 'Admin', 'شكل لوحة الإدارة': 'Admin panel display', 'لوحة كاملة': 'Full panel', 'أيقونات فقط': 'Icons only',
+    'مزودو الذكاء الاصطناعي': 'AI providers', 'إضافة مزود': 'Add provider', 'تعديل': 'Edit', 'مسح': 'Delete',
+    'النسخ الاحتياطي والاسترجاع': 'Backup and restore', 'تحميل نسخة احتياطية': 'Download backup', 'استرجاع نسخة': 'Restore backup',
+    'منطقة الخطر': 'Danger zone', 'حذف كل البيانات': 'Delete all data', 'مفعل': 'Enabled', 'متوقف': 'Disabled',
+    'الموديل تلقائي': 'Automatic model', 'مفتاح API': 'API key', 'اسم المزود': 'Provider name', 'عنوان API الأساسي': 'API base URL',
+    'الموديل (اختياري للاكتشاف التلقائي)': 'Model (optional for auto-discovery)', 'أضف مزود ذكاء اصطناعي': 'Add AI provider',
+    'الموديل': 'Model', 'تشغيل مزود واحد': 'Use one provider', 'تشغيل كل المزودين': 'Use all providers',
+    'اختيار طريقة تشغيل الذكاء الاصطناعي': 'Choose AI operation mode', 'جاهز': 'Ready', 'غير مضبوط': 'Not configured',
+    'عربي': 'Arabic', 'إنجليزي': 'English', 'مرحباً بك': 'Welcome', 'إدارة منصة كلية شرق النيل من مكان واحد.': 'Manage East Nile College from one place.',
+    'الطلاب': 'Students', 'الأقسام': 'Departments', 'القاعات المفتوحة': 'Open rooms', 'المسودات': 'Drafts',
+    'فتح القائمة': 'Open list', 'إدارة الأقسام': 'Manage departments', 'عرض القاعات': 'View rooms', 'مراجعة المسودات': 'Review drafts',
+    'إدارة الامتحانات': 'Manage exams', 'إضافة طالب': 'Add student', 'لا يوجد طلاب.': 'No students.', 'حذف': 'Delete',
+    'إضافة قسم': 'Add department', 'إضافة مادة': 'Add subject', 'إضافة قاعة': 'Add room', 'إضافة امتحان': 'Add exam',
+    'ورشة إعداد الامتحان': 'Exam builder', 'إدارة القاعات': 'Room management', 'تفاصيل القاعة': 'Room details',
+    'امتحانات مادة': 'Subject exams', 'مواد قسم': 'Department subjects', 'الاسم': 'Name', 'الرقم': 'ID',
+    'الصلاحية': 'Role', 'إجراءات': 'Actions', 'المستخدم': 'Username', 'المحتوى المصدر قصير جداً': 'The source content is too short',
+    'أرفق ملفاً أو أدخل محتوى لا يقل عن 30 حرفاً': 'Attach a file or enter at least 30 characters',
+    'اختيار من متعدد': 'Multiple choice', 'صح أو خطأ': 'True or false', 'مقالية': 'Essay',
+    'متوسط': 'Medium', 'سهل': 'Easy', 'صعب': 'Hard', 'العربية': 'Arabic', 'English': 'English',
+    'ملف المصدر': 'Source file', 'أو الصق محتوى المحاضرة هنا...': 'Or paste lecture content here...',
+    'تعليمات إضافية اختيارية، مثل: ركز على الوحدة الثالثة': 'Optional instructions, e.g. focus on unit three',
+    'تحسين أسئلة الامتحان الحالية بدل إنشاء أسئلة من الصفر': 'Improve existing exam questions instead of creating new ones',
+    'تحليل وإنشاء مسودة': 'Analyze and create draft', 'إضافة إلى الامتحان': 'Add to exam', 'إلغاء': 'Cancel',
+    'إعدادات الامتحان': 'Exam settings', 'حفظ الإعدادات': 'Save settings', 'اسم الامتحان': 'Exam name',
+    'المدة (دقيقة)': 'Duration (minutes)', 'رمز الدخول (PIN)': 'Access PIN', 'إعلان الدرجات': 'Publish grades',
+    'إعدادات الحماية:': 'Protection settings:', 'منع النسخ': 'Prevent copying', 'منع كليك يمين': 'Prevent right click',
+    'كشف التبويب': 'Detect tab switching', 'كاميرا': 'Camera', 'مراجعة الطالب': 'Student review',
+    'عشوائية اختيارات': 'Randomize choices', 'حفظ هذه الإعدادات كقالب للاستخدام لاحقاً': 'Save these settings as a reusable template',
+    'لا توجد مزودات.': 'No providers.', 'جاري قراءة إعدادات الخادم...': 'Reading server settings...',
+    'لم يتم ضبط أي مفتاح API بعد.': 'No API key has been configured yet.', 'المفتاح يُرسل عبر اتصال آمن ويُحفظ مشفراً في قاعدة البيانات.': 'The key is sent securely and encrypted in the database.',
+    'تم حفظ إعدادات الذكاء الاصطناعي بشكل مشفر': 'AI settings saved securely', 'تعذر حفظ الإعدادات': 'Could not save settings',
+    'تم مسح المفتاح': 'Key deleted', 'تم التحميل': 'Downloaded', 'تم الاسترجاع': 'Restored'
+};
+function translateRenderedContent() {
+    if (language === 'ar') return;
+    document.documentElement.lang = 'en';
+    document.documentElement.dir = 'ltr';
+    document.querySelectorAll('#app *').forEach(element => {
+        element.childNodes.forEach(node => {
+            if (node.nodeType === Node.TEXT_NODE) {
+                let translated = node.textContent;
+                Object.keys(translations).sort((a, b) => b.length - a.length).forEach(key => {
+                    translated = translated.split(key).join(translations[key]);
+                });
+                node.textContent = translated;
+            }
+        });
+        ['placeholder', 'title', 'aria-label'].forEach(attribute => {
+            const value = element.getAttribute(attribute);
+            if (value && translations[value]) element.setAttribute(attribute, translations[value]);
+        });
+    });
+}
+function toggleLanguage() {
+    localStorage.setItem('language', language === 'ar' ? 'en' : 'ar');
+    location.reload();
+}
+function addLanguageControl() {
+    if (document.getElementById('language-control')) return;
+    const button = document.createElement('button');
+    button.id = 'language-control';
+    button.type = 'button';
+    button.onclick = toggleLanguage;
+    button.className = 'language-control';
+    button.textContent = language === 'ar' ? 'English' : 'العربية';
+    document.body.appendChild(button);
+}
 let token = localStorage.getItem('token') || null;
 let user = JSON.parse(localStorage.getItem('user')) || null;
 const app = document.getElementById('app');
+const languageObserver = new MutationObserver(translateRenderedContent);
+languageObserver.observe(app, { childList: true, subtree: true });
 let examState = { attempt: null, room: null, questions: [], currentIdx: 0, flagged: [], isPreview: false };
 let globalRooms = [], globalDepts = [], globalSubjects = [], globalTemplates = [];
 let activeRoomId = null, activeDeptId = null, activeSubjectId = null;
@@ -37,6 +111,9 @@ const authHeaders = () => ({ 'Content-Type': 'application/json', 'Authorization'
 const showToast = (title, icon = 'success') => Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 3000, icon, title });
 
 function init() {
+    addLanguageControl();
+    document.documentElement.lang = language;
+    document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
     if (token && user) { user.type === 'admin' ? renderAdminDashboard('students') : renderStudentDashboard(); } else { renderLogin(); }
 }
 
@@ -104,7 +181,7 @@ async function renderAdminDashboard(view = 'students', deptId = null, subId = nu
     let headerTitle = view === 'home' ? 'لوحة التحكم' : view === 'students' ? 'قائمة الطلاب' : view === 'departments' ? 'الأقسام' : view === 'subjects' ? `مواد قسم (${activeDept ? activeDept.name : ''})` : view === 'subject-details' ? `امتحانات مادة (${activeSubject ? activeSubject.name : ''})` : view === 'exam-builder' ? 'ورشة إعداد الامتحان' : view === 'rooms' ? 'إدارة القاعات' : view === 'room-details' ? 'تفاصيل القاعة' : view === 'admins' ? 'إدارة الأدمنز' : 'إعدادات النظام';
 
     app.innerHTML = `
-    <div class="flex h-screen bg-gray-50 overflow-hidden">
+    <div class="admin-shell flex min-h-screen bg-gray-50">
         <aside id="admin-sidebar" class="admin-sidebar ${sidebarMode === 'icons' ? 'sidebar-icons' : ''} bg-primary text-white flex flex-col shadow-2xl">
             <div class="h-20 flex items-center justify-center gap-3 border-b border-blue-800"><img src="logo.jpg" alt="شعار كلية شرق النيل" class="w-12 h-12 object-contain rounded-lg bg-white"><span class="sidebar-label text-xl font-bold">كلية شرق النيل</span></div>
             <nav class="flex-1 p-3 space-y-2">
@@ -169,14 +246,16 @@ function loadSettings() {
         <div class="bg-white border border-blue-200 rounded-2xl p-8 shadow-sm"><h3 class="text-xl font-bold text-gray-800 mb-3"><i class="fa-solid fa-display text-primary ml-2"></i> شكل لوحة الإدارة</h3><p class="text-sm text-gray-500 mb-4">اختر هل تظهر القائمة الجانبية كلوحة كاملة أم كأيقونات مختصرة.</p><div class="grid grid-cols-1 md:grid-cols-2 gap-3"><button onclick="setSidebarMode('panel')" class="sidebar-mode-option ${localStorage.getItem('adminSidebarMode') !== 'icons' ? 'selected' : ''}"><i class="fa-solid fa-table-columns"></i><span><b>لوحة كاملة</b><small>الأيقونة مع اسم القسم</small></span></button><button onclick="setSidebarMode('icons')" class="sidebar-mode-option ${localStorage.getItem('adminSidebarMode') === 'icons' ? 'selected' : ''}"><i class="fa-solid fa-icons"></i><span><b>أيقونات فقط</b><small>مربعات الأيقونات لتوفير المساحة</small></span></button></div></div>
         <div class="bg-white border border-gray-200 rounded-2xl p-8 shadow-sm"><h3 class="text-xl font-bold text-gray-800 mb-4"><i class="fa-solid fa-download text-primary ml-2"></i> النسخ الاحتياطي والاسترجاع</h3><div class="flex flex-wrap gap-3"><button onclick="downloadBackup()" class="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold">تحميل نسخة احتياطية</button><button onclick="restoreBackup()" class="bg-green-600 text-white px-6 py-3 rounded-xl font-bold">استرجاع نسخة</button></div><p class="text-sm text-gray-500 mt-3">الاسترجاع يستبدل البيانات الحالية بالكامل.</p></div>
         ${user.isSuper ? `<div class="bg-white border border-blue-200 rounded-2xl p-8 shadow-sm"><h3 class="text-xl font-bold text-gray-800 mb-3"><i class="fa-solid fa-users-gear text-primary ml-2"></i> إدارة الأدمنز</h3><p class="text-sm text-gray-500 mb-4">إضافة وتعديل وحذف حسابات الأدمنز من إعدادات النظام.</p><button onclick="renderAdminDashboard('admins')" class="bg-primary text-white px-5 py-3 rounded-xl font-bold">فتح إدارة الأدمنز</button></div>` : ''}
-        <div class="bg-purple-50 border border-purple-200 rounded-2xl p-8 shadow-sm"><div class="flex items-center justify-between gap-3 mb-3"><h3 class="text-xl font-bold text-purple-800"><i class="fa-solid fa-wand-magic-sparkles ml-2"></i> مزودو الذكاء الاصطناعي</h3><button onclick="editAIConfig()" class="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-bold"><i class="fa-solid fa-plus ml-1"></i> إضافة مزود</button></div><p id="ai-config-status" class="text-sm text-purple-900 mb-4">جاري قراءة إعدادات الخادم...</p><div id="ai-providers-list" class="grid md:grid-cols-2 gap-4"></div><p class="text-xs text-gray-600 mt-3">أضف أي مزود يدعم OpenAI-compatible أو Gemini. المفاتيح مشفرة ولا تظهر كاملة، والموديل اختياري وسيُكتشف تلقائياً عند تركه فارغاً.</p></div>
+        <div class="bg-purple-50 border border-purple-200 rounded-2xl p-8 shadow-sm"><div class="flex items-center justify-between gap-3 mb-3"><h3 class="text-xl font-bold text-purple-800"><i class="fa-solid fa-wand-magic-sparkles ml-2"></i> مزودو الذكاء الاصطناعي</h3><button onclick="editAIConfig()" class="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-bold"><i class="fa-solid fa-plus ml-1"></i> إضافة مزود</button></div><p id="ai-config-status" class="text-sm text-purple-900 mb-4">جاري قراءة إعدادات الخادم...</p><div class="bg-white rounded-xl p-4 border mb-4"><label class="block font-bold mb-2">اختيار طريقة تشغيل الذكاء الاصطناعي</label><select id="ai-mode-input" onchange="setAIMode(this.value)" class="w-full p-3 border rounded-xl"><option value="single">تشغيل مزود واحد</option><option value="all">تشغيل كل المزودين</option></select><p class="text-xs text-gray-500 mt-2">في وضع كل المزودين تُجمع النتائج من جميع المزودين النشطين.</p></div><div id="ai-providers-list" class="grid md:grid-cols-2 gap-4"></div><p class="text-xs text-gray-600 mt-3">أضف أي API متوافق مع OpenAI، واكتب عنوانه ومفتاحه فقط. اترك الموديل فارغاً ليكتشفه الموقع تلقائياً.</p></div>
         <div class="bg-red-50 border border-red-200 rounded-2xl p-8 shadow-sm"><h3 class="text-2xl font-bold text-red-700 mb-4">منطقة الخطر</h3><button onclick="confirmSystemWipe()" class="bg-red-600 text-white px-6 py-3 rounded-xl font-bold">حذف كل البيانات</button></div></div>`;
     fetch(API + '/ai/config', { headers: authHeaders() }).then(res => res.json()).then(config => {
         window.aiProviders = config.providers || [];
         const status = document.getElementById('ai-config-status');
         if (status) status.textContent = config.configured ? `${config.providers.length} مزود جاهز` : 'لم يتم ضبط أي مفتاح API بعد.';
+        const modeInput = document.getElementById('ai-mode-input');
+        if (modeInput) modeInput.value = config.mode || 'single';
         const list = document.getElementById('ai-providers-list');
-        if (list) list.innerHTML = (config.providers || []).map(item => `<div class="bg-white rounded-xl p-4 border"><div class="flex justify-between gap-2"><h4 class="font-bold">${item.name}</h4><span class="text-xs ${item.enabled ? 'text-green-600' : 'text-gray-400'}">${item.enabled ? 'مفعل' : 'متوقف'}</span></div><p class="text-xs text-gray-500 mt-2">${item.protocol === 'gemini' ? 'Gemini API' : 'OpenAI-compatible'} | ${item.model || 'الموديل تلقائي'}</p><p class="text-xs text-gray-500 mb-3">${item.last4 ? `المفتاح ينتهي بـ ****${item.last4}` : 'مفتاح مضبوط'}</p><button onclick="editAIConfig('${item.id}')" class="bg-purple-600 text-white px-3 py-2 rounded-lg text-sm font-bold">تعديل</button><button onclick="deleteAIConfig('${item.id}')" class="mr-2 bg-red-50 text-red-600 px-3 py-2 rounded-lg text-sm font-bold">مسح</button></div>`).join('') || '<p class="text-sm text-gray-500">لا توجد مزودات.</p>';
+        if (list) list.innerHTML = (config.providers || []).map(item => `<div class="bg-white rounded-xl p-4 border"><div class="flex justify-between gap-2"><h4 class="font-bold">${item.name}</h4><span class="text-xs ${item.enabled ? 'text-green-600' : 'text-gray-400'}">${item.enabled ? 'مفعل' : 'متوقف'}</span></div><p class="text-xs text-gray-500 mt-2">${item.baseUrl}</p><p class="text-xs text-gray-500 mb-3">${item.model || 'الموديل تلقائي'}${item.last4 ? ` | المفتاح ينتهي بـ ****${item.last4}` : ''}</p><button onclick="editAIConfig('${item.id}')" class="bg-purple-600 text-white px-3 py-2 rounded-lg text-sm font-bold">تعديل</button><button onclick="deleteAIConfig('${item.id}')" class="mr-2 bg-red-50 text-red-600 px-3 py-2 rounded-lg text-sm font-bold">مسح</button></div>`).join('') || '<p class="text-sm text-gray-500">لا توجد مزودات.</p>';
     }).catch(() => {});
 }
 function setSidebarMode(mode) {
@@ -184,14 +263,18 @@ function setSidebarMode(mode) {
     localStorage.setItem('adminSidebarMode', mode);
     renderAdminDashboard('settings');
 }
+async function setAIMode(mode) {
+    const response = await fetch(API + '/ai/mode', { method: 'PUT', headers: authHeaders(), body: JSON.stringify({ mode }) });
+    if (!response.ok) showToast('تعذر حفظ طريقة التشغيل', 'error');
+}
 async function editAIConfig(providerId = '') {
     const current = (window.aiProviders || []).find(item => item.id === providerId) || {};
     const result = await Swal.fire({
         title: current.id ? 'تعديل مزود الذكاء الاصطناعي' : 'إضافة مزود ذكاء اصطناعي',
-        html: `<input id="ai-name-input" class="swal2-input" value="${current.name || ''}" placeholder="اسم المزود"><select id="ai-protocol-input" class="swal2-select"><option value="openai" ${current.protocol !== 'gemini' ? 'selected' : ''}>OpenAI-compatible</option><option value="gemini" ${current.protocol === 'gemini' ? 'selected' : ''}>Gemini API</option></select><input id="ai-url-input" class="swal2-input" value="${current.baseUrl || 'https://api.openai.com/v1'}" placeholder="عنوان API الأساسي"><input id="ai-model-input" class="swal2-input" value="${current.model || ''}" placeholder="الموديل (اختياري للاكتشاف التلقائي)"><input id="ai-key-input" type="password" class="swal2-input" placeholder="${current.id ? 'مفتاح API الجديد (اختياري)' : 'مفتاح API'}"><p class="text-xs text-gray-500">اترك الموديل فارغاً ليكتشف الخادم موديلًا مناسباً تلقائياً.</p>`,
+        html: `<input id="ai-name-input" class="swal2-input" value="${current.name || ''}" placeholder="اسم المزود"><input id="ai-url-input" class="swal2-input" value="${current.baseUrl || 'https://api.openai.com/v1'}" placeholder="عنوان API الأساسي"><input id="ai-model-input" class="swal2-input" value="${current.model || ''}" placeholder="الموديل (اختياري للاكتشاف التلقائي)"><input id="ai-key-input" type="password" class="swal2-input" placeholder="${current.id ? 'مفتاح API الجديد (اختياري)' : 'مفتاح API'}"><p class="text-xs text-gray-500">استخدم أي API متوافق مع OpenAI. اترك الموديل فارغاً للاكتشاف التلقائي.</p>`,
         showCancelButton: true,
         confirmButtonText: 'حفظ مشفراً',
-        preConfirm: () => ({ id: current.id, name: document.getElementById('ai-name-input').value.trim(), protocol: document.getElementById('ai-protocol-input').value, baseUrl: document.getElementById('ai-url-input').value.trim(), model: document.getElementById('ai-model-input').value.trim(), apiKey: document.getElementById('ai-key-input').value.trim() })
+        preConfirm: () => ({ id: current.id, name: document.getElementById('ai-name-input').value.trim(), baseUrl: document.getElementById('ai-url-input').value.trim(), model: document.getElementById('ai-model-input').value.trim(), apiKey: document.getElementById('ai-key-input').value.trim() })
     });
     if (!result.isConfirmed) return;
     const response = await fetch(API + '/ai/config', { method: 'PUT', headers: authHeaders(), body: JSON.stringify(result.value) });
@@ -547,7 +630,7 @@ async function openAIQuestionsModal(roomId) {
     }
     const providers = (window.aiProviders || []).filter(item => item.configured && item.enabled !== false);
     if (!providers.length) return Swal.fire('لا توجد مزودات', 'أضف مفتاح API من إعدادات النظام أولاً.', 'warning');
-    const providerOptions = providers.map(item => `<option value="${item.id}" data-model="${item.model || ''}">${item.name}</option>`).join('');
+    const providerOptions = `<option value="" data-model="">كل المزودين حسب الإعداد</option>${providers.map(item => `<option value="${item.id}" data-model="${item.model || ''}">${item.name}</option>`).join('')}`;
     Swal.fire({
         title: 'إنشاء أسئلة بالذكاء الاصطناعي',
         width: '720px',

@@ -46,13 +46,10 @@ const DeptStudent = mongoose.model('DeptStudent', new mongoose.Schema({ departme
 const RoomStudent = mongoose.model('RoomStudent', new mongoose.Schema({ roomId: String, studentId: String }));
 const Attempt = mongoose.model('Attempt', new mongoose.Schema({ roomId: String, studentId: String, answers: Object, violations: Array, submittedAt: Date, score: Number, total: Number }));
 const AiConfig = mongoose.model('AiConfig', new mongoose.Schema({
-  defaultProvider: { type: String, enum: ['gemini', 'grok'], default: 'gemini' },
-  gemini: { model: String, encryptedKey: String, last4: String, updatedAt: Date },
-  grok: { model: String, encryptedKey: String, last4: String, updatedAt: Date },
+  mode: { type: String, enum: ['single', 'all'], default: 'single' },
   providers: [{
     id: { type: String, required: true },
     name: { type: String, required: true },
-    protocol: { type: String, enum: ['openai', 'gemini'], default: 'openai' },
     baseUrl: String,
     model: String,
     encryptedKey: String,
@@ -64,8 +61,6 @@ const AiConfig = mongoose.model('AiConfig', new mongoose.Schema({
 
 const JWT_SECRET = process.env.JWT_SECRET || 'secret';
 const uuid = () => crypto.randomUUID();
-const AI_PROVIDER = process.env.AI_PROVIDER || 'gemini';
-const AI_MODEL = process.env.AI_MODEL || (AI_PROVIDER === 'grok' ? 'grok-2-latest' : 'gemini-2.0-flash');
 const ENCRYPTION_KEY = process.env.APP_ENCRYPTION_KEY;
 
 function encryptionKey() {
@@ -139,25 +134,12 @@ function normalizeQuestions(payload, requestedCount) {
 
 async function generateWithAI({ provider, model, sourceText, count, type, difficulty, language, existingQuestions, instruction }) {
   const stored = await AiConfig.findOne().lean();
-  const legacyProvider = provider && stored?.[provider] ? { id: provider, name: provider, protocol: provider === 'gemini' ? 'gemini' : 'openai', baseUrl: provider === 'gemini' ? 'https://generativelanguage.googleapis.com/v1beta' : 'https://api.x.ai/v1', ...stored[provider] } : null;
-  const dynamicProvider = stored?.providers?.find(item => item.id === provider && item.enabled !== false);
-  const legacyId = provider || stored?.defaultProvider || AI_PROVIDER;
-  const defaultLegacy = stored?.[legacyId] ? {
-    id: legacyId, name: legacyId, protocol: legacyId === 'gemini' ? 'gemini' : 'openai',
-    baseUrl: legacyId === 'gemini' ? 'https://generativelanguage.googleapis.com/v1beta' : 'https://api.x.ai/v1',
-    ...stored[legacyId]
-  } : {
-    id: legacyId, name: legacyId, protocol: legacyId === 'gemini' ? 'gemini' : 'openai',
-    baseUrl: legacyId === 'gemini' ? 'https://generativelanguage.googleapis.com/v1beta' : 'https://api.x.ai/v1'
-  };
-  const selectedProvider = dynamicProvider || legacyProvider || stored?.providers?.find(item => item.enabled !== false) || defaultLegacy;
-  if (!selectedProvider) throw new Error('أضف مزود ذكاء اصطناعي من إعدادات النظام');
-  const protocol = selectedProvider.protocol || (selectedProvider.id === 'gemini' ? 'gemini' : 'openai');
-  const apiKey = selectedProvider.encryptedKey
-    ? decryptSecret(selectedProvider.encryptedKey)
-    : process.env[selectedProvider.id === 'gemini' ? 'GEMINI_API_KEY' : selectedProvider.id === 'grok' ? 'GROK_API_KEY' : 'AI_API_KEY'];
-  const baseUrl = String(selectedProvider.baseUrl || (protocol === 'gemini' ? 'https://generativelanguage.googleapis.com/v1beta' : 'https://api.openai.com/v1')).replace(/\/+$/, '');
-  const selectedModel = model || selectedProvider.model || await discoverModel({ protocol, baseUrl, apiKey });
+  const configuredProviders = (stored?.providers || []).filter(item => item.enabled !== false && item.encryptedKey);
+  if (!configuredProviders.length) throw new Error('أضف مفتاح API واحداً على الأقل من إعدادات النظام');
+  const selectedProviders = provider
+    ? configuredProviders.filter(item => item.id === provider)
+    : stored?.mode === 'all' ? configuredProviders : configuredProviders.slice(0, 1);
+  if (!selectedProviders.length) throw new Error('مزود الذكاء الاصطناعي المحدد غير متاح');
   const format = type === 'essay'
     ? 'essay'
     : type === 'tf' ? 'true/false' : 'multiple choice';
@@ -169,39 +151,31 @@ Do not invent facts outside the source. Keep one correct answer for MCQ/TF. ${in
 ${existingQuestions ? `Existing exam questions to improve or rewrite:\n${JSON.stringify(existingQuestions)}` : ''}
 Source material:
 ${sourceText}`;
-  let response;
-  if (!apiKey) throw new Error('مفتاح مزود الذكاء الاصطناعي غير مضبوط من الإعدادات');
-  if (protocol === 'openai') {
-    response = await fetch(`${baseUrl}/chat/completions`, {
+  const generateForProvider = async (selectedProvider, providerCount) => {
+    const apiKey = decryptSecret(selectedProvider.encryptedKey);
+    const baseUrl = String(selectedProvider.baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
+    const selectedModel = model || selectedProvider.model || await discoverModel({ baseUrl, apiKey });
+    const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: selectedModel, temperature: 0.2, messages: [{ role: 'system', content: 'Return JSON only.' }, { role: 'user', content: prompt }] })
+      body: JSON.stringify({ model: selectedModel, temperature: 0.2, messages: [{ role: 'system', content: 'Return JSON only.' }, { role: 'user', content: prompt.replace(`exactly ${count}`, `exactly ${providerCount}`) }] })
     });
-  } else {
-    response = await fetch(`${baseUrl}/models/${encodeURIComponent(selectedModel)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ generationConfig: { temperature: 0.2, responseMimeType: 'application/json' }, contents: [{ parts: [{ text: prompt }] }] })
-    });
-  }
-  const body = await response.json();
-  if (!response.ok) throw new Error(body.error?.message || 'فشل الاتصال بمزود الذكاء الاصطناعي');
-  const text = protocol === 'openai'
-    ? body.choices?.[0]?.message?.content
-    : body.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('');
-  return normalizeQuestions(extractJson(text || ''), count);
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error?.message || `فشل الاتصال بالمزود ${selectedProvider.name}`);
+    const text = body.choices?.[0]?.message?.content;
+    return normalizeQuestions(extractJson(text || ''), providerCount);
+  };
+  const providerCount = Math.max(1, Math.ceil(count / selectedProviders.length));
+  const batches = await Promise.all(selectedProviders.map(item => generateForProvider(item, providerCount)));
+  return batches.flat().slice(0, count);
 }
 
-async function discoverModel({ protocol, baseUrl, apiKey }) {
+async function discoverModel({ baseUrl, apiKey }) {
   if (!apiKey) throw new Error('أضف مفتاح API أو حدد الموديل يدويًا');
-  const response = protocol === 'gemini'
-    ? await fetch(`${baseUrl}/models?key=${encodeURIComponent(apiKey)}`)
-    : await fetch(`${baseUrl}/models`, { headers: { Authorization: `Bearer ${apiKey}` } });
+  const response = await fetch(`${baseUrl}/models`, { headers: { Authorization: `Bearer ${apiKey}` } });
   if (!response.ok) throw new Error('تعذر اكتشاف موديل مزود الذكاء الاصطناعي');
   const body = await response.json();
-  const models = protocol === 'gemini'
-    ? (body.models || []).map(item => String(item.name || '').replace(/^models\//, '')).filter(Boolean)
-    : (body.data || []).map(item => item.id).filter(Boolean);
+  const models = (body.data || []).map(item => item.id).filter(Boolean);
   if (!models.length) throw new Error('لم يُرجع المزود أي موديلات متاحة');
   return models.find(item => /flash|mini|chat|instruct|latest/i.test(item)) || models[0];
 }
@@ -229,19 +203,12 @@ app.get('/api/health', (_req, res) => res.json({ ok: true, name: 'كلية شر�
 app.get('/api/ai/config', superAdminAuth, async (_req, res) => {
   const stored = await AiConfig.findOne().lean();
   const providers = (stored?.providers || []).map(item => ({
-    id: item.id, name: item.name, protocol: item.protocol, baseUrl: item.baseUrl,
+    id: item.id, name: item.name, baseUrl: item.baseUrl,
     model: item.model || null, configured: Boolean(item.encryptedKey), last4: item.last4 || null,
     enabled: item.enabled !== false
   }));
-  for (const [id, name, protocol, baseUrl, envKey, fallbackModel] of [
-    ['gemini', 'Gemini (قديم)', 'gemini', 'https://generativelanguage.googleapis.com/v1beta', 'GEMINI_API_KEY', 'gemini-2.0-flash'],
-    ['grok', 'Grok (قديم)', 'openai', 'https://api.x.ai/v1', 'GROK_API_KEY', 'grok-2-latest']
-  ]) {
-    if (stored?.[id]?.encryptedKey || process.env[envKey]) {
-      providers.push({ id, name, protocol, baseUrl, model: stored?.[id]?.model || fallbackModel, configured: true, last4: stored?.[id]?.last4 || null, enabled: true });
-    }
-  }
   res.json({
+    mode: stored?.mode || 'single',
     configured: providers.some(item => item.configured),
     providers
   });
@@ -249,21 +216,19 @@ app.get('/api/ai/config', superAdminAuth, async (_req, res) => {
 
 app.put('/api/ai/config', superAdminAuth, async (req, res) => {
   try {
-    const provider = String(req.body.provider || '').trim();
-    const id = String(req.body.id || provider || crypto.randomUUID()).trim();
+    const id = String(req.body.id || crypto.randomUUID()).trim();
     const name = String(req.body.name || '').trim();
-    const protocol = req.body.protocol === 'gemini' ? 'gemini' : 'openai';
     const baseUrl = String(req.body.baseUrl || '').trim().replace(/\/+$/, '');
     const model = String(req.body.model || '').trim();
     const apiKey = String(req.body.apiKey || '').trim();
     if (!name) return res.status(400).json({ error: 'اسم المزود مطلوب' });
     if (!baseUrl) return res.status(400).json({ error: 'عنوان API مطلوب' });
     const existing = await AiConfig.findOne().lean();
-    const old = existing?.providers?.find(item => item.id === id) || existing?.[id];
-    if (!apiKey && !old?.encryptedKey && !process.env[id === 'gemini' ? 'GEMINI_API_KEY' : id === 'grok' ? 'GROK_API_KEY' : '']) {
+    const old = existing?.providers?.find(item => item.id === id);
+    if (!apiKey && !old?.encryptedKey) {
       return res.status(400).json({ error: 'مفتاح API مطلوب' });
     }
-    const item = { id, name, protocol, baseUrl, model: model || old?.model || '', enabled: true, updatedAt: new Date() };
+    const item = { id, name, baseUrl, model: model || old?.model || '', enabled: old?.enabled !== false, updatedAt: new Date() };
     if (apiKey) {
       item.encryptedKey = encryptSecret(apiKey);
       item.last4 = apiKey.slice(-4);
@@ -281,13 +246,16 @@ app.put('/api/ai/config', superAdminAuth, async (req, res) => {
   }
 });
 
+app.put('/api/ai/mode', superAdminAuth, async (req, res) => {
+  const mode = req.body.mode === 'all' ? 'all' : 'single';
+  await AiConfig.findOneAndUpdate({}, { $set: { mode } }, { upsert: true });
+  res.json({ ok: true, mode });
+});
+
 app.delete('/api/ai/config/:provider', superAdminAuth, async (req, res) => {
   const config = await AiConfig.findOne();
   if (config) {
     config.providers = config.providers.filter(item => item.id !== req.params.provider);
-    if (['gemini', 'grok'].includes(req.params.provider)) {
-      config[req.params.provider] = { model: null, encryptedKey: null, last4: null, updatedAt: new Date() };
-    }
     await config.save();
   }
   res.json({ ok: true });
@@ -299,7 +267,7 @@ app.post('/api/ai/generate-questions', adminAuth, async (req, res) => {
   if (!sourceText || sourceText.trim().length < 30) return res.status(400).json({ error: 'المحتوى المصدر قصير جداً' });
   try {
     const questions = await generateWithAI({ provider, model, sourceText: sourceText.slice(0, 100000), count: requestedCount, type, difficulty, language, existingQuestions, instruction });
-    res.json({ questions, provider: provider || AI_PROVIDER, model: model || AI_MODEL });
+    res.json({ questions, provider: provider || null, model: model || null });
   } catch (error) {
     console.error('AI question generation failed:', error);
     res.status(502).json({ error: error.message || 'تعذر إنشاء الأسئلة' });
