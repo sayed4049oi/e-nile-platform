@@ -48,7 +48,18 @@ const Attempt = mongoose.model('Attempt', new mongoose.Schema({ roomId: String, 
 const AiConfig = mongoose.model('AiConfig', new mongoose.Schema({
   defaultProvider: { type: String, enum: ['gemini', 'grok'], default: 'gemini' },
   gemini: { model: String, encryptedKey: String, last4: String, updatedAt: Date },
-  grok: { model: String, encryptedKey: String, last4: String, updatedAt: Date }
+  grok: { model: String, encryptedKey: String, last4: String, updatedAt: Date },
+  providers: [{
+    id: { type: String, required: true },
+    name: { type: String, required: true },
+    protocol: { type: String, enum: ['openai', 'gemini'], default: 'openai' },
+    baseUrl: String,
+    model: String,
+    encryptedKey: String,
+    last4: String,
+    enabled: { type: Boolean, default: true },
+    updatedAt: Date
+  }]
 }));
 
 const JWT_SECRET = process.env.JWT_SECRET || 'secret';
@@ -128,10 +139,25 @@ function normalizeQuestions(payload, requestedCount) {
 
 async function generateWithAI({ provider, model, sourceText, count, type, difficulty, language, existingQuestions, instruction }) {
   const stored = await AiConfig.findOne().lean();
-  const selectedProvider = provider || stored?.defaultProvider || AI_PROVIDER;
-  const providerConfig = stored?.[selectedProvider];
-  const selectedModel = model || providerConfig?.model || (selectedProvider === AI_PROVIDER ? AI_MODEL : selectedProvider === 'grok' ? 'grok-2-latest' : 'gemini-2.0-flash');
-  const configuredKey = providerConfig?.encryptedKey ? decryptSecret(providerConfig.encryptedKey) : null;
+  const legacyProvider = provider && stored?.[provider] ? { id: provider, name: provider, protocol: provider === 'gemini' ? 'gemini' : 'openai', baseUrl: provider === 'gemini' ? 'https://generativelanguage.googleapis.com/v1beta' : 'https://api.x.ai/v1', ...stored[provider] } : null;
+  const dynamicProvider = stored?.providers?.find(item => item.id === provider && item.enabled !== false);
+  const legacyId = provider || stored?.defaultProvider || AI_PROVIDER;
+  const defaultLegacy = stored?.[legacyId] ? {
+    id: legacyId, name: legacyId, protocol: legacyId === 'gemini' ? 'gemini' : 'openai',
+    baseUrl: legacyId === 'gemini' ? 'https://generativelanguage.googleapis.com/v1beta' : 'https://api.x.ai/v1',
+    ...stored[legacyId]
+  } : {
+    id: legacyId, name: legacyId, protocol: legacyId === 'gemini' ? 'gemini' : 'openai',
+    baseUrl: legacyId === 'gemini' ? 'https://generativelanguage.googleapis.com/v1beta' : 'https://api.x.ai/v1'
+  };
+  const selectedProvider = dynamicProvider || legacyProvider || stored?.providers?.find(item => item.enabled !== false) || defaultLegacy;
+  if (!selectedProvider) throw new Error('أضف مزود ذكاء اصطناعي من إعدادات النظام');
+  const protocol = selectedProvider.protocol || (selectedProvider.id === 'gemini' ? 'gemini' : 'openai');
+  const apiKey = selectedProvider.encryptedKey
+    ? decryptSecret(selectedProvider.encryptedKey)
+    : process.env[selectedProvider.id === 'gemini' ? 'GEMINI_API_KEY' : selectedProvider.id === 'grok' ? 'GROK_API_KEY' : 'AI_API_KEY'];
+  const baseUrl = String(selectedProvider.baseUrl || (protocol === 'gemini' ? 'https://generativelanguage.googleapis.com/v1beta' : 'https://api.openai.com/v1')).replace(/\/+$/, '');
+  const selectedModel = model || selectedProvider.model || await discoverModel({ protocol, baseUrl, apiKey });
   const format = type === 'essay'
     ? 'essay'
     : type === 'tf' ? 'true/false' : 'multiple choice';
@@ -144,18 +170,15 @@ ${existingQuestions ? `Existing exam questions to improve or rewrite:\n${JSON.st
 Source material:
 ${sourceText}`;
   let response;
-  if (selectedProvider === 'grok') {
-    const apiKey = configuredKey || process.env.GROK_API_KEY;
-    if (!apiKey) throw new Error('مفتاح Grok غير مضبوط من الإعدادات');
-    response = await fetch('https://api.x.ai/v1/chat/completions', {
+  if (!apiKey) throw new Error('مفتاح مزود الذكاء الاصطناعي غير مضبوط من الإعدادات');
+  if (protocol === 'openai') {
+    response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: selectedModel, temperature: 0.2, messages: [{ role: 'system', content: 'Return JSON only.' }, { role: 'user', content: prompt }] })
     });
   } else {
-    const apiKey = configuredKey || process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error('مفتاح Gemini غير مضبوط من الإعدادات');
-    response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(selectedModel)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+    response = await fetch(`${baseUrl}/models/${encodeURIComponent(selectedModel)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ generationConfig: { temperature: 0.2, responseMimeType: 'application/json' }, contents: [{ parts: [{ text: prompt }] }] })
@@ -163,10 +186,24 @@ ${sourceText}`;
   }
   const body = await response.json();
   if (!response.ok) throw new Error(body.error?.message || 'فشل الاتصال بمزود الذكاء الاصطناعي');
-  const text = selectedProvider === 'grok'
+  const text = protocol === 'openai'
     ? body.choices?.[0]?.message?.content
     : body.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('');
   return normalizeQuestions(extractJson(text || ''), count);
+}
+
+async function discoverModel({ protocol, baseUrl, apiKey }) {
+  if (!apiKey) throw new Error('أضف مفتاح API أو حدد الموديل يدويًا');
+  const response = protocol === 'gemini'
+    ? await fetch(`${baseUrl}/models?key=${encodeURIComponent(apiKey)}`)
+    : await fetch(`${baseUrl}/models`, { headers: { Authorization: `Bearer ${apiKey}` } });
+  if (!response.ok) throw new Error('تعذر اكتشاف موديل مزود الذكاء الاصطناعي');
+  const body = await response.json();
+  const models = protocol === 'gemini'
+    ? (body.models || []).map(item => String(item.name || '').replace(/^models\//, '')).filter(Boolean)
+    : (body.data || []).map(item => item.id).filter(Boolean);
+  if (!models.length) throw new Error('لم يُرجع المزود أي موديلات متاحة');
+  return models.find(item => /flash|mini|chat|instruct|latest/i.test(item)) || models[0];
 }
 
 // ===== Auth =====
@@ -191,35 +228,53 @@ app.get('/api/health', (_req, res) => res.json({ ok: true, name: 'كلية شر�
 
 app.get('/api/ai/config', superAdminAuth, async (_req, res) => {
   const stored = await AiConfig.findOne().lean();
-  res.json({
-    provider: stored?.defaultProvider || AI_PROVIDER,
-    model: stored?.[stored?.defaultProvider || AI_PROVIDER]?.model || AI_MODEL,
-    configured: Boolean(stored?.gemini?.encryptedKey || stored?.grok?.encryptedKey || process.env.GEMINI_API_KEY || process.env.GROK_API_KEY),
-    providers: {
-      gemini: { configured: Boolean(stored?.gemini?.encryptedKey || process.env.GEMINI_API_KEY), model: stored?.gemini?.model || 'gemini-2.0-flash', last4: stored?.gemini?.last4 || null },
-      grok: { configured: Boolean(stored?.grok?.encryptedKey || process.env.GROK_API_KEY), model: stored?.grok?.model || 'grok-2-latest', last4: stored?.grok?.last4 || null }
+  const providers = (stored?.providers || []).map(item => ({
+    id: item.id, name: item.name, protocol: item.protocol, baseUrl: item.baseUrl,
+    model: item.model || null, configured: Boolean(item.encryptedKey), last4: item.last4 || null,
+    enabled: item.enabled !== false
+  }));
+  for (const [id, name, protocol, baseUrl, envKey, fallbackModel] of [
+    ['gemini', 'Gemini (قديم)', 'gemini', 'https://generativelanguage.googleapis.com/v1beta', 'GEMINI_API_KEY', 'gemini-2.0-flash'],
+    ['grok', 'Grok (قديم)', 'openai', 'https://api.x.ai/v1', 'GROK_API_KEY', 'grok-2-latest']
+  ]) {
+    if (stored?.[id]?.encryptedKey || process.env[envKey]) {
+      providers.push({ id, name, protocol, baseUrl, model: stored?.[id]?.model || fallbackModel, configured: true, last4: stored?.[id]?.last4 || null, enabled: true });
     }
+  }
+  res.json({
+    configured: providers.some(item => item.configured),
+    providers
   });
 });
 
 app.put('/api/ai/config', superAdminAuth, async (req, res) => {
   try {
-    const provider = req.body.provider;
+    const provider = String(req.body.provider || '').trim();
+    const id = String(req.body.id || provider || crypto.randomUUID()).trim();
+    const name = String(req.body.name || '').trim();
+    const protocol = req.body.protocol === 'gemini' ? 'gemini' : 'openai';
+    const baseUrl = String(req.body.baseUrl || '').trim().replace(/\/+$/, '');
     const model = String(req.body.model || '').trim();
     const apiKey = String(req.body.apiKey || '').trim();
-    if (!['gemini', 'grok'].includes(provider)) return res.status(400).json({ error: 'المزود غير صالح' });
-    if (!model) return res.status(400).json({ error: 'اسم الموديل مطلوب' });
-    if (!apiKey && !process.env[provider === 'gemini' ? 'GEMINI_API_KEY' : 'GROK_API_KEY']) {
+    if (!name) return res.status(400).json({ error: 'اسم المزود مطلوب' });
+    if (!baseUrl) return res.status(400).json({ error: 'عنوان API مطلوب' });
+    const existing = await AiConfig.findOne().lean();
+    const old = existing?.providers?.find(item => item.id === id) || existing?.[id];
+    if (!apiKey && !old?.encryptedKey && !process.env[id === 'gemini' ? 'GEMINI_API_KEY' : id === 'grok' ? 'GROK_API_KEY' : '']) {
       return res.status(400).json({ error: 'مفتاح API مطلوب' });
     }
-    const update = { defaultProvider: provider, [`${provider}.model`]: model };
+    const item = { id, name, protocol, baseUrl, model: model || old?.model || '', enabled: true, updatedAt: new Date() };
     if (apiKey) {
-      update[`${provider}.encryptedKey`] = encryptSecret(apiKey);
-      update[`${provider}.last4`] = apiKey.slice(-4);
-      update[`${provider}.updatedAt`] = new Date();
+      item.encryptedKey = encryptSecret(apiKey);
+      item.last4 = apiKey.slice(-4);
+    } else {
+      item.encryptedKey = old.encryptedKey;
+      item.last4 = old.last4;
     }
-    await AiConfig.findOneAndUpdate({}, { $set: update }, { upsert: true, new: true });
-    res.json({ ok: true, provider, model, last4: apiKey ? apiKey.slice(-4) : null });
+    const providers = (existing?.providers || []).filter(entry => entry.id !== id);
+    providers.push(item);
+    await AiConfig.findOneAndUpdate({}, { $set: { providers } }, { upsert: true, new: true });
+    res.json({ ok: true, id, model: item.model || null, last4: item.last4 });
   } catch (error) {
     console.error('AI config save failed:', error);
     res.status(500).json({ error: error.message || 'تعذر حفظ إعدادات الذكاء الاصطناعي' });
@@ -227,9 +282,14 @@ app.put('/api/ai/config', superAdminAuth, async (req, res) => {
 });
 
 app.delete('/api/ai/config/:provider', superAdminAuth, async (req, res) => {
-  if (!['gemini', 'grok'].includes(req.params.provider)) return res.status(400).json({ error: 'المزود غير صالح' });
-  const update = { [`${req.params.provider}.encryptedKey`]: null, [`${req.params.provider}.last4`]: null, [`${req.params.provider}.updatedAt`]: new Date() };
-  await AiConfig.findOneAndUpdate({}, { $set: update }, { upsert: true });
+  const config = await AiConfig.findOne();
+  if (config) {
+    config.providers = config.providers.filter(item => item.id !== req.params.provider);
+    if (['gemini', 'grok'].includes(req.params.provider)) {
+      config[req.params.provider] = { model: null, encryptedKey: null, last4: null, updatedAt: new Date() };
+    }
+    await config.save();
+  }
   res.json({ ok: true });
 });
 
