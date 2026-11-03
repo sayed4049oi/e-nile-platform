@@ -275,6 +275,35 @@ app.patch('/api/ai/config/:provider', superAdminAuth, async (req, res) => {
   res.json({ ok: true, id: provider.id, enabled: provider.enabled });
 });
 
+app.post('/api/ai/test/:provider', superAdminAuth, async (req, res) => {
+  try {
+    const config = await AiConfig.findOne().lean();
+    const provider = config?.providers?.find(item => item.id === req.params.provider);
+    if (!provider?.encryptedKey) return res.status(404).json({ error: 'المزود أو مفتاحه غير موجود' });
+    const apiKey = decryptSecret(provider.encryptedKey);
+    const protocol = provider.protocol || 'openai';
+    const baseUrl = String(provider.baseUrl || (protocol === 'anthropic' ? 'https://api.anthropic.com/v1' : 'https://api.openai.com/v1')).replace(/\/+$/, '');
+    const model = provider.model || await discoverModel({ protocol, baseUrl, apiKey });
+    const response = protocol === 'anthropic'
+      ? await fetch(`${baseUrl}/messages`, {
+        method: 'POST',
+        headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, max_tokens: 32, messages: [{ role: 'user', content: 'Reply with the single word OK.' }] })
+      })
+      : await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, max_tokens: 32, messages: [{ role: 'user', content: 'Reply with the single word OK.' }] })
+      });
+    const body = await response.json();
+    if (!response.ok) return res.status(502).json({ error: body.error?.message || 'فشل اختبار الاتصال بالمزود' });
+    res.json({ ok: true, provider: provider.name, model });
+  } catch (error) {
+    console.error('AI provider test failed:', error);
+    res.status(502).json({ error: error.message || 'تعذر اختبار المزود' });
+  }
+});
+
 app.delete('/api/ai/config/:provider', superAdminAuth, async (req, res) => {
   const config = await AiConfig.findOne();
   if (config) {

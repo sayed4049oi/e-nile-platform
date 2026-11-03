@@ -18,6 +18,7 @@ I built this since 2023 using a phone and old laptop, learning Python and web de
 The frontend is served by the backend so that API requests and the static files use the same origin.
 
 **AI question generation:** The super admin can add any number of AI APIs from the system settings page. Each connection supports OpenAI-compatible APIs (covering providers such as OpenAI, DeepSeek, Qwen, Mistral, OpenRouter, and similar services) or Anthropic Messages APIs. Configure the name, protocol, base URL, encrypted key, and optional model; OpenAI-compatible models are discovered automatically when `/models` is available. Each provider can be enabled or disabled, and the system can use one provider or all enabled providers together. Keys are encrypted with `APP_ENCRYPTION_KEY` and are never returned in full or committed to the project.
+The settings page includes a real connection test that calls the configured provider and reports the selected model. Previously exposed keys must be revoked and replaced; they are not reused as defaults.
 
 **Languages and scrolling:** The interface supports Arabic and English from the fixed language control. The selected language is stored per browser, updates document direction (`rtl`/`ltr`), and the admin/student/exam layouts remain vertically scrollable on desktop and mobile.
 
