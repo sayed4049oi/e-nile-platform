@@ -98,6 +98,45 @@ button:hover { background: var(--primary-light); }
     border-radius: 14px;
     background: rgb(255 255 255 / 0.08);
 }
+.sidebar-mode-option {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 16px;
+    margin: 0;
+    border: 2px solid #e2e8f0;
+    border-radius: 14px;
+    background: #fff;
+    color: #1e3a8a;
+    text-align: right;
+}
+.sidebar-mode-option > i {
+    display: inline-flex;
+    width: 40px;
+    height: 40px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 11px;
+    background: #eff6ff;
+    font-size: 19px;
+}
+.sidebar-mode-option span { flex: 1; }
+.sidebar-mode-option b, .sidebar-mode-option small { display: block; }
+.sidebar-mode-option small { margin-top: 4px; color: #64748b; font-size: 12px; }
+.sidebar-mode-option.selected { border-color: #2563eb; background: #eff6ff; box-shadow: 0 0 0 3px rgb(37 99 235 / 0.1); }
+.admin-sidebar.sidebar-icons { width: 92px; }
+.admin-sidebar.sidebar-icons .sidebar-label { display: none; }
+.admin-sidebar.sidebar-icons .sidebar-link {
+    justify-content: center;
+    width: 58px;
+    min-height: 58px;
+    padding: 9px;
+    margin-inline: auto;
+}
+.admin-sidebar.sidebar-icons .sidebar-link i { width: 38px; height: 38px; font-size: 18px; }
+.admin-sidebar.sidebar-icons .sidebar-profile { justify-content: center; padding: 8px; }
+.admin-sidebar.sidebar-icons .sidebar-logout { width: 58px; margin-inline: auto !important; padding-inline: 0; }
 .dashboard-stat {
     padding: 22px;
     border: 1px solid #e2e8f0;
@@ -143,7 +182,11 @@ button:hover { background: var(--primary-light); }
     button, input, select, textarea { font-size: 15px; }
     .camera-preview { width: 120px; height: 90px; bottom: 10px; left: 10px; }
     #app .h-screen { min-height: 100vh; height: auto; }
-    #app .admin-sidebar { width: 100% !important; min-height: auto; }
+    #app .admin-sidebar, #app .admin-sidebar.sidebar-icons { width: 100% !important; min-height: auto; }
+    #app .admin-sidebar.sidebar-icons .sidebar-label { display: inline; }
+    #app .admin-sidebar.sidebar-icons .sidebar-link { justify-content: flex-start; width: auto; min-height: 52px; padding: 9px 8px; margin: 6px 4px; }
+    #app .admin-sidebar.sidebar-icons .sidebar-profile { justify-content: flex-start; padding: 10px; }
+    #app .admin-sidebar.sidebar-icons .sidebar-logout { width: 100%; padding-inline: 12px; }
     #app .admin-sidebar .sidebar-label { opacity: 1; max-width: 180px; }
     #app .admin-sidebar nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; padding: 8px; }
     #app .admin-sidebar .sidebar-link { justify-content: flex-start; padding: 9px 8px; font-size: 12px; }
