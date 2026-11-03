@@ -71,6 +71,11 @@ const AiConfig = mongoose.model('AiConfig', new mongoose.Schema({
     updatedAt: Date
   }]
 }));
+Admin.collection.createIndex({ username: 1 }, { unique: true }).catch(() => {});
+DeptStudent.collection.createIndex({ departmentId: 1, studentId: 1 }, { unique: true }).catch(() => {});
+RoomStudent.collection.createIndex({ roomId: 1, studentId: 1 }, { unique: true }).catch(() => {});
+Attempt.collection.createIndex({ roomId: 1, studentId: 1, submittedAt: 1 }).catch(() => {});
+Room.collection.createIndex({ scheduledOpenAt: 1, scheduledCloseAt: 1, isOpen: 1 }).catch(() => {});
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) throw new Error('JWT_SECRET غير مضبوط في الخادم');
@@ -115,6 +120,26 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 30000) {
   try { return await fetch(url, { ...options, signal: controller.signal }); }
   finally { clearTimeout(timer); }
 }
+
+const requestBuckets = new Map();
+function rateLimit({ windowMs, max, key = req => req.ip }) {
+  return (req, res, next) => {
+    const bucketKey = `${key(req)}:${req.path}`;
+    const now = Date.now();
+    const bucket = requestBuckets.get(bucketKey);
+    if (!bucket || now - bucket.startedAt >= windowMs) {
+      requestBuckets.set(bucketKey, { startedAt: now, count: 1 });
+      return next();
+    }
+    bucket.count += 1;
+    if (bucket.count > max) return res.status(429).json({ error: 'محاولات كثيرة، حاول لاحقاً' });
+    next();
+  };
+}
+setInterval(() => {
+  const cutoff = Date.now() - 15 * 60 * 1000;
+  for (const [key, bucket] of requestBuckets) if (bucket.startedAt < cutoff) requestBuckets.delete(key);
+}, 5 * 60 * 1000).unref();
 
 function audit(req, action, resource, resourceId, metadata = {}) {
   return AuditEvent.create({
@@ -244,7 +269,7 @@ async function discoverModel({ protocol, baseUrl, apiKey }) {
 }
 
 // ===== Auth =====
-app.post('/api/auth/admin/login', async (req, res) => {
+app.post('/api/auth/admin/login', rateLimit({ windowMs: 15 * 60 * 1000, max: 10 }), async (req, res) => {
   const admin = await Admin.findOne({ username: req.body.username });
   if (!admin || !(await bcrypt.compare(req.body.password, admin.password))) return res.status(401).json({ error: 'بيانات خاطئة' });
   const token = jwt.sign({ id: admin._id, role: 'admin' }, JWT_SECRET, { expiresIn: '12h' });
@@ -253,7 +278,7 @@ app.post('/api/auth/admin/login', async (req, res) => {
   res.json(response);
 });
 
-app.post('/api/auth/student/enter', async (req, res) => {
+app.post('/api/auth/student/enter', rateLimit({ windowMs: 15 * 60 * 1000, max: 30 }), async (req, res) => {
   const student = await Student.findOne({ universityId: req.body.universityId });
   if (!student) return res.status(404).json({ error: 'الرقم غير مسجل' });
   const enrolled = await RoomStudent.find({ studentId: student._id });
@@ -337,7 +362,7 @@ app.patch('/api/ai/config/:provider', superAdminAuth, async (req, res) => {
   res.json({ ok: true, id: provider.id, enabled: provider.enabled });
 });
 
-app.post('/api/ai/test/:provider', superAdminAuth, async (req, res) => {
+app.post('/api/ai/test/:provider', superAdminAuth, rateLimit({ windowMs: 60 * 1000, max: 5, key: req => req.user.id }), async (req, res) => {
   try {
     const config = await AiConfig.findOne().lean();
     const provider = config?.providers?.find(item => item.id === req.params.provider);
@@ -376,7 +401,7 @@ app.delete('/api/ai/config/:provider', superAdminAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/ai/generate-questions', adminAuth, async (req, res) => {
+app.post('/api/ai/generate-questions', adminAuth, rateLimit({ windowMs: 60 * 1000, max: 5, key: req => req.user.id }), async (req, res) => {
   const { provider, model, sourceText, count, type, difficulty, language, existingQuestions, instruction } = req.body;
   const requestedCount = Math.max(1, Math.min(50, Number(count) || 10));
   if (!sourceText || sourceText.trim().length < 30) return res.status(400).json({ error: 'المحتوى المصدر قصير جداً' });
