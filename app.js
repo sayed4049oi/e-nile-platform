@@ -255,7 +255,7 @@ function loadSettings() {
         const modeInput = document.getElementById('ai-mode-input');
         if (modeInput) modeInput.value = config.mode || 'single';
         const list = document.getElementById('ai-providers-list');
-        if (list) list.innerHTML = (config.providers || []).map(item => `<div class="bg-white rounded-xl p-4 border"><div class="flex justify-between gap-2"><h4 class="font-bold">${item.name}</h4><span class="text-xs ${item.enabled ? 'text-green-600' : 'text-gray-400'}">${item.enabled ? 'مفعل' : 'متوقف'}</span></div><p class="text-xs text-gray-500 mt-2">${item.baseUrl}</p><p class="text-xs text-gray-500 mb-3">${item.model || 'الموديل تلقائي'}${item.last4 ? ` | المفتاح ينتهي بـ ****${item.last4}` : ''}</p><button onclick="editAIConfig('${item.id}')" class="bg-purple-600 text-white px-3 py-2 rounded-lg text-sm font-bold">تعديل</button><button onclick="deleteAIConfig('${item.id}')" class="mr-2 bg-red-50 text-red-600 px-3 py-2 rounded-lg text-sm font-bold">مسح</button></div>`).join('') || '<p class="text-sm text-gray-500">لا توجد مزودات.</p>';
+        if (list) list.innerHTML = (config.providers || []).map(item => `<div class="bg-white rounded-xl p-4 border"><div class="flex justify-between gap-2"><h4 class="font-bold">${item.name}</h4><span class="text-xs ${item.enabled ? 'text-green-600' : 'text-gray-400'}">${item.enabled ? 'مفعل' : 'متوقف'}</span></div><p class="text-xs text-gray-500 mt-2">${item.protocol === 'anthropic' ? 'Anthropic Messages' : 'OpenAI-compatible'} | ${item.baseUrl}</p><p class="text-xs text-gray-500 mb-3">${item.model || 'الموديل تلقائي'}${item.last4 ? ` | المفتاح ينتهي بـ ****${item.last4}` : ''}</p><button onclick="toggleAIProvider('${item.id}', ${!item.enabled})" class="${item.enabled ? 'bg-amber-50 text-amber-700' : 'bg-green-50 text-green-700'} px-3 py-2 rounded-lg text-sm font-bold">${item.enabled ? 'إيقاف' : 'تفعيل'}</button><button onclick="editAIConfig('${item.id}')" class="mr-2 bg-purple-600 text-white px-3 py-2 rounded-lg text-sm font-bold">تعديل</button><button onclick="deleteAIConfig('${item.id}')" class="mr-2 bg-red-50 text-red-600 px-3 py-2 rounded-lg text-sm font-bold">مسح</button></div>`).join('') || '<p class="text-sm text-gray-500">لا توجد مزودات.</p>';
     }).catch(() => {});
 }
 function setSidebarMode(mode) {
@@ -267,14 +267,19 @@ async function setAIMode(mode) {
     const response = await fetch(API + '/ai/mode', { method: 'PUT', headers: authHeaders(), body: JSON.stringify({ mode }) });
     if (!response.ok) showToast('تعذر حفظ طريقة التشغيل', 'error');
 }
+async function toggleAIProvider(providerId, enabled) {
+    const response = await fetch(API + `/ai/config/${providerId}`, { method: 'PATCH', headers: authHeaders(), body: JSON.stringify({ enabled }) });
+    if (!response.ok) return showToast('تعذر تغيير حالة المزود', 'error');
+    loadSettings();
+}
 async function editAIConfig(providerId = '') {
     const current = (window.aiProviders || []).find(item => item.id === providerId) || {};
     const result = await Swal.fire({
         title: current.id ? 'تعديل مزود الذكاء الاصطناعي' : 'إضافة مزود ذكاء اصطناعي',
-        html: `<input id="ai-name-input" class="swal2-input" value="${current.name || ''}" placeholder="اسم المزود"><input id="ai-url-input" class="swal2-input" value="${current.baseUrl || 'https://api.openai.com/v1'}" placeholder="عنوان API الأساسي"><input id="ai-model-input" class="swal2-input" value="${current.model || ''}" placeholder="الموديل (اختياري للاكتشاف التلقائي)"><input id="ai-key-input" type="password" class="swal2-input" placeholder="${current.id ? 'مفتاح API الجديد (اختياري)' : 'مفتاح API'}"><p class="text-xs text-gray-500">استخدم أي API متوافق مع OpenAI. اترك الموديل فارغاً للاكتشاف التلقائي.</p>`,
+        html: `<input id="ai-name-input" class="swal2-input" value="${current.name || ''}" placeholder="اسم المزود"><select id="ai-protocol-input" class="swal2-select" onchange="document.getElementById('ai-url-input').value=this.value==='anthropic'?'https://api.anthropic.com/v1':'https://api.openai.com/v1'"><option value="openai" ${current.protocol !== 'anthropic' ? 'selected' : ''}>OpenAI-compatible (OpenAI, DeepSeek, Qwen, Mistral, OpenRouter وغيرها)</option><option value="anthropic" ${current.protocol === 'anthropic' ? 'selected' : ''}>Anthropic Messages (Claude)</option></select><input id="ai-url-input" class="swal2-input" value="${current.baseUrl || 'https://api.openai.com/v1'}" placeholder="عنوان API الأساسي"><input id="ai-model-input" class="swal2-input" value="${current.model || ''}" placeholder="الموديل (اختياري للاكتشاف التلقائي)"><input id="ai-key-input" type="password" class="swal2-input" placeholder="${current.id ? 'مفتاح API الجديد (اختياري)' : 'مفتاح API'}"><p class="text-xs text-gray-500">استخدم OpenAI-compatible لمعظم المزودين، أو Anthropic للـClaude. الموديل يكتشف تلقائيًا فقط مع OpenAI-compatible.</p>`,
         showCancelButton: true,
         confirmButtonText: 'حفظ مشفراً',
-        preConfirm: () => ({ id: current.id, name: document.getElementById('ai-name-input').value.trim(), baseUrl: document.getElementById('ai-url-input').value.trim(), model: document.getElementById('ai-model-input').value.trim(), apiKey: document.getElementById('ai-key-input').value.trim() })
+        preConfirm: () => ({ id: current.id, name: document.getElementById('ai-name-input').value.trim(), protocol: document.getElementById('ai-protocol-input').value, baseUrl: document.getElementById('ai-url-input').value.trim(), model: document.getElementById('ai-model-input').value.trim(), apiKey: document.getElementById('ai-key-input').value.trim() })
     });
     if (!result.isConfirmed) return;
     const response = await fetch(API + '/ai/config', { method: 'PUT', headers: authHeaders(), body: JSON.stringify(result.value) });

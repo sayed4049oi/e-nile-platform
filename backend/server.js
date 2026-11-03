@@ -50,6 +50,7 @@ const AiConfig = mongoose.model('AiConfig', new mongoose.Schema({
   providers: [{
     id: { type: String, required: true },
     name: { type: String, required: true },
+    protocol: { type: String, enum: ['openai', 'anthropic'], default: 'openai' },
     baseUrl: String,
     model: String,
     encryptedKey: String,
@@ -153,16 +154,26 @@ Source material:
 ${sourceText}`;
   const generateForProvider = async (selectedProvider, providerCount) => {
     const apiKey = decryptSecret(selectedProvider.encryptedKey);
-    const baseUrl = String(selectedProvider.baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
-    const selectedModel = model || selectedProvider.model || await discoverModel({ baseUrl, apiKey });
-    const response = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: selectedModel, temperature: 0.2, messages: [{ role: 'system', content: 'Return JSON only.' }, { role: 'user', content: prompt.replace(`exactly ${count}`, `exactly ${providerCount}`) }] })
-    });
+    const protocol = selectedProvider.protocol || 'openai';
+    const baseUrl = String(selectedProvider.baseUrl || (protocol === 'anthropic' ? 'https://api.anthropic.com/v1' : 'https://api.openai.com/v1')).replace(/\/+$/, '');
+    const selectedModel = model || selectedProvider.model || await discoverModel({ protocol, baseUrl, apiKey });
+    const requestPrompt = prompt.replace(`exactly ${count}`, `exactly ${providerCount}`);
+    const response = protocol === 'anthropic'
+      ? await fetch(`${baseUrl}/messages`, {
+        method: 'POST',
+        headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: selectedModel, max_tokens: 4096, temperature: 0.2, system: 'Return JSON only.', messages: [{ role: 'user', content: requestPrompt }] })
+      })
+      : await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: selectedModel, temperature: 0.2, messages: [{ role: 'system', content: 'Return JSON only.' }, { role: 'user', content: requestPrompt }] })
+      });
     const body = await response.json();
     if (!response.ok) throw new Error(body.error?.message || `فشل الاتصال بالمزود ${selectedProvider.name}`);
-    const text = body.choices?.[0]?.message?.content;
+    const text = protocol === 'anthropic'
+      ? body.content?.map(item => item.text || '').join('')
+      : body.choices?.[0]?.message?.content;
     return normalizeQuestions(extractJson(text || ''), providerCount);
   };
   const providerCount = Math.max(1, Math.ceil(count / selectedProviders.length));
@@ -170,7 +181,8 @@ ${sourceText}`;
   return batches.flat().slice(0, count);
 }
 
-async function discoverModel({ baseUrl, apiKey }) {
+async function discoverModel({ protocol, baseUrl, apiKey }) {
+  if (protocol === 'anthropic') throw new Error('حدد موديل Anthropic يدويًا لأن هذا المزود لا يوفر اكتشاف موديلات عامًا');
   if (!apiKey) throw new Error('أضف مفتاح API أو حدد الموديل يدويًا');
   const response = await fetch(`${baseUrl}/models`, { headers: { Authorization: `Bearer ${apiKey}` } });
   if (!response.ok) throw new Error('تعذر اكتشاف موديل مزود الذكاء الاصطناعي');
@@ -203,7 +215,7 @@ app.get('/api/health', (_req, res) => res.json({ ok: true, name: 'كلية شر�
 app.get('/api/ai/config', superAdminAuth, async (_req, res) => {
   const stored = await AiConfig.findOne().lean();
   const providers = (stored?.providers || []).map(item => ({
-    id: item.id, name: item.name, baseUrl: item.baseUrl,
+    id: item.id, name: item.name, protocol: item.protocol || 'openai', baseUrl: item.baseUrl,
     model: item.model || null, configured: Boolean(item.encryptedKey), last4: item.last4 || null,
     enabled: item.enabled !== false
   }));
@@ -218,6 +230,7 @@ app.put('/api/ai/config', superAdminAuth, async (req, res) => {
   try {
     const id = String(req.body.id || crypto.randomUUID()).trim();
     const name = String(req.body.name || '').trim();
+    const protocol = req.body.protocol === 'anthropic' ? 'anthropic' : 'openai';
     const baseUrl = String(req.body.baseUrl || '').trim().replace(/\/+$/, '');
     const model = String(req.body.model || '').trim();
     const apiKey = String(req.body.apiKey || '').trim();
@@ -228,7 +241,7 @@ app.put('/api/ai/config', superAdminAuth, async (req, res) => {
     if (!apiKey && !old?.encryptedKey) {
       return res.status(400).json({ error: 'مفتاح API مطلوب' });
     }
-    const item = { id, name, baseUrl, model: model || old?.model || '', enabled: old?.enabled !== false, updatedAt: new Date() };
+    const item = { id, name, protocol, baseUrl, model: model || old?.model || '', enabled: old?.enabled !== false, updatedAt: new Date() };
     if (apiKey) {
       item.encryptedKey = encryptSecret(apiKey);
       item.last4 = apiKey.slice(-4);
@@ -250,6 +263,16 @@ app.put('/api/ai/mode', superAdminAuth, async (req, res) => {
   const mode = req.body.mode === 'all' ? 'all' : 'single';
   await AiConfig.findOneAndUpdate({}, { $set: { mode } }, { upsert: true });
   res.json({ ok: true, mode });
+});
+
+app.patch('/api/ai/config/:provider', superAdminAuth, async (req, res) => {
+  const enabled = req.body.enabled === true;
+  const config = await AiConfig.findOne();
+  const provider = config?.providers?.find(item => item.id === req.params.provider);
+  if (!provider) return res.status(404).json({ error: 'المزود غير موجود' });
+  provider.enabled = enabled;
+  await config.save();
+  res.json({ ok: true, id: provider.id, enabled: provider.enabled });
 });
 
 app.delete('/api/ai/config/:provider', superAdminAuth, async (req, res) => {
