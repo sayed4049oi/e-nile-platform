@@ -45,6 +45,18 @@ const Student = mongoose.model('Student', new mongoose.Schema({ name: String, un
 const DeptStudent = mongoose.model('DeptStudent', new mongoose.Schema({ departmentId: String, studentId: String }));
 const RoomStudent = mongoose.model('RoomStudent', new mongoose.Schema({ roomId: String, studentId: String }));
 const Attempt = mongoose.model('Attempt', new mongoose.Schema({ roomId: String, studentId: String, answers: Object, violations: Array, submittedAt: Date, score: Number, total: Number }));
+const AuditEvent = mongoose.model('AuditEvent', new mongoose.Schema({
+  actorId: String,
+  actorRole: String,
+  action: { type: String, required: true },
+  resource: String,
+  resourceId: String,
+  metadata: Object,
+  ip: String,
+  createdAt: { type: Date, default: Date.now }
+}));
+AuditEvent.collection.createIndex({ createdAt: -1 }).catch(() => {});
+AuditEvent.collection.createIndex({ actorId: 1, createdAt: -1 }).catch(() => {});
 const AiConfig = mongoose.model('AiConfig', new mongoose.Schema({
   mode: { type: String, enum: ['single', 'all'], default: 'single' },
   providers: [{
@@ -59,6 +71,11 @@ const AiConfig = mongoose.model('AiConfig', new mongoose.Schema({
     updatedAt: Date
   }]
 }));
+Admin.collection.createIndex({ username: 1 }, { unique: true }).catch(() => {});
+DeptStudent.collection.createIndex({ departmentId: 1, studentId: 1 }, { unique: true }).catch(() => {});
+RoomStudent.collection.createIndex({ roomId: 1, studentId: 1 }, { unique: true }).catch(() => {});
+Attempt.collection.createIndex({ roomId: 1, studentId: 1, submittedAt: 1 }).catch(() => {});
+Room.collection.createIndex({ scheduledOpenAt: 1, scheduledCloseAt: 1, isOpen: 1 }).catch(() => {});
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) throw new Error('JWT_SECRET غير مضبوط في الخادم');
@@ -102,6 +119,58 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 30000) {
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try { return await fetch(url, { ...options, signal: controller.signal }); }
   finally { clearTimeout(timer); }
+}
+
+async function fetchWithRetry(url, options = {}, attempts = 3) {
+  let lastError;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const response = await fetchWithTimeout(url, options);
+      if (response.status < 500 || attempt === attempts - 1) return response;
+      await new Promise(resolve => setTimeout(resolve, 300 * (attempt + 1)));
+    } catch (error) {
+      lastError = error;
+      if (attempt === attempts - 1) throw error;
+      await new Promise(resolve => setTimeout(resolve, 300 * (attempt + 1)));
+    }
+  }
+  throw lastError || new Error('فشل الاتصال');
+}
+
+const requestBuckets = new Map();
+function rateLimit({ windowMs, max, key = req => req.ip }) {
+  return (req, res, next) => {
+    const bucketKey = `${key(req)}:${req.path}`;
+    const now = Date.now();
+    const bucket = requestBuckets.get(bucketKey);
+    if (!bucket || now - bucket.startedAt >= windowMs) {
+      requestBuckets.set(bucketKey, { startedAt: now, count: 1 });
+      return next();
+    }
+    bucket.count += 1;
+    if (bucket.count > max) return res.status(429).json({ error: 'محاولات كثيرة، حاول لاحقاً' });
+    next();
+  };
+}
+setInterval(() => {
+  const cutoff = Date.now() - 15 * 60 * 1000;
+  for (const [key, bucket] of requestBuckets) if (bucket.startedAt < cutoff) requestBuckets.delete(key);
+}, 5 * 60 * 1000).unref();
+
+function audit(req, action, resource, resourceId, metadata = {}) {
+  return AuditEvent.create({
+    actorId: req.user?.id || 'anonymous',
+    actorRole: req.user?.role || 'anonymous',
+    action, resource, resourceId: resourceId ? String(resourceId) : undefined,
+    metadata, ip: req.ip
+  }).catch(error => console.error('Audit event failed:', error.message));
+}
+
+function requireRole(role) {
+  return (req, res, next) => {
+    if (req.user?.role !== role) return res.status(403).json({ error: 'صلاحية غير كافية' });
+    next();
+  };
 }
 
 // ===== Middlewares =====
@@ -180,12 +249,12 @@ ${sourceText}`;
     const selectedModel = model || selectedProvider.model || await discoverModel({ protocol, baseUrl, apiKey });
     const requestPrompt = prompt.replace(`exactly ${count}`, `exactly ${providerCount}`);
     const response = protocol === 'anthropic'
-      ? await fetchWithTimeout(`${baseUrl}/messages`, {
+      ? await fetchWithRetry(`${baseUrl}/messages`, {
         method: 'POST',
         headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: selectedModel, max_tokens: 4096, temperature: 0.2, system: 'Return JSON only.', messages: [{ role: 'user', content: requestPrompt }] })
       })
-      : await fetchWithTimeout(`${baseUrl}/chat/completions`, {
+      : await fetchWithRetry(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: selectedModel, temperature: 0.2, messages: [{ role: 'system', content: 'Return JSON only.' }, { role: 'user', content: requestPrompt }] })
@@ -207,7 +276,7 @@ ${sourceText}`;
 async function discoverModel({ protocol, baseUrl, apiKey }) {
   if (protocol === 'anthropic') throw new Error('حدد موديل Anthropic يدويًا لأن هذا المزود لا يوفر اكتشاف موديلات عامًا');
   if (!apiKey) throw new Error('أضف مفتاح API أو حدد الموديل يدويًا');
-  const response = await fetchWithTimeout(`${baseUrl}/models`, { headers: { Authorization: `Bearer ${apiKey}` } });
+  const response = await fetchWithRetry(`${baseUrl}/models`, { headers: { Authorization: `Bearer ${apiKey}` } });
   if (!response.ok) throw new Error('تعذر اكتشاف موديل مزود الذكاء الاصطناعي');
   const body = await response.json();
   const models = (body.data || []).map(item => item.id).filter(Boolean);
@@ -216,14 +285,16 @@ async function discoverModel({ protocol, baseUrl, apiKey }) {
 }
 
 // ===== Auth =====
-app.post('/api/auth/admin/login', async (req, res) => {
+app.post('/api/auth/admin/login', rateLimit({ windowMs: 15 * 60 * 1000, max: 10 }), async (req, res) => {
   const admin = await Admin.findOne({ username: req.body.username });
   if (!admin || !(await bcrypt.compare(req.body.password, admin.password))) return res.status(401).json({ error: 'بيانات خاطئة' });
   const token = jwt.sign({ id: admin._id, role: 'admin' }, JWT_SECRET, { expiresIn: '12h' });
-  res.json({ token, admin: { id: admin._id, name: admin.name, isSuper: admin.isSuper } });
+  const response = { token, admin: { id: admin._id, name: admin.name, isSuper: admin.isSuper } };
+  await audit({ user: { id: admin._id, role: 'admin' }, ip: req.ip }, 'login', 'admin', admin._id, { success: true });
+  res.json(response);
 });
 
-app.post('/api/auth/student/enter', async (req, res) => {
+app.post('/api/auth/student/enter', rateLimit({ windowMs: 15 * 60 * 1000, max: 30 }), async (req, res) => {
   const student = await Student.findOne({ universityId: req.body.universityId });
   if (!student) return res.status(404).json({ error: 'الرقم غير مسجل' });
   const enrolled = await RoomStudent.find({ studentId: student._id });
@@ -246,6 +317,12 @@ app.get('/api/ai/config', superAdminAuth, async (_req, res) => {
     mode: stored?.mode || 'single',
     configured: providers.some(item => item.configured),
     providers
+  });
+
+  app.get('/api/audit-events', superAdminAuth, async (req, res) => {
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
+    const events = await AuditEvent.find().sort({ createdAt: -1 }).limit(limit).lean();
+    res.json(events);
   });
 });
 
@@ -275,6 +352,7 @@ app.put('/api/ai/config', superAdminAuth, async (req, res) => {
     const providers = (existing?.providers || []).filter(entry => entry.id !== id);
     providers.push(item);
     await AiConfig.findOneAndUpdate({}, { $set: { providers } }, { upsert: true, new: true });
+    await audit(req, 'upsert', 'ai_provider', id, { name, protocol, model: item.model || null });
     res.json({ ok: true, id, model: item.model || null, last4: item.last4 });
   } catch (error) {
     console.error('AI config save failed:', error);
@@ -285,6 +363,7 @@ app.put('/api/ai/config', superAdminAuth, async (req, res) => {
 app.put('/api/ai/mode', superAdminAuth, async (req, res) => {
   const mode = req.body.mode === 'all' ? 'all' : 'single';
   await AiConfig.findOneAndUpdate({}, { $set: { mode } }, { upsert: true });
+  await audit(req, 'update_mode', 'ai_config', undefined, { mode });
   res.json({ ok: true, mode });
 });
 
@@ -295,10 +374,11 @@ app.patch('/api/ai/config/:provider', superAdminAuth, async (req, res) => {
   if (!provider) return res.status(404).json({ error: 'المزود غير موجود' });
   provider.enabled = enabled;
   await config.save();
+  await audit(req, enabled ? 'enable' : 'disable', 'ai_provider', provider.id);
   res.json({ ok: true, id: provider.id, enabled: provider.enabled });
 });
 
-app.post('/api/ai/test/:provider', superAdminAuth, async (req, res) => {
+app.post('/api/ai/test/:provider', superAdminAuth, rateLimit({ windowMs: 60 * 1000, max: 5, key: req => req.user.id }), async (req, res) => {
   try {
     const config = await AiConfig.findOne().lean();
     const provider = config?.providers?.find(item => item.id === req.params.provider);
@@ -308,12 +388,12 @@ app.post('/api/ai/test/:provider', superAdminAuth, async (req, res) => {
     const baseUrl = validateProviderUrl(provider.baseUrl || (protocol === 'anthropic' ? 'https://api.anthropic.com/v1' : 'https://api.openai.com/v1'));
     const model = provider.model || await discoverModel({ protocol, baseUrl, apiKey });
     const response = protocol === 'anthropic'
-      ? await fetchWithTimeout(`${baseUrl}/messages`, {
+      ? await fetchWithRetry(`${baseUrl}/messages`, {
         method: 'POST',
         headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
         body: JSON.stringify({ model, max_tokens: 32, messages: [{ role: 'user', content: 'Reply with the single word OK.' }] })
       })
-      : await fetchWithTimeout(`${baseUrl}/chat/completions`, {
+      : await fetchWithRetry(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ model, max_tokens: 32, messages: [{ role: 'user', content: 'Reply with the single word OK.' }] })
@@ -333,15 +413,17 @@ app.delete('/api/ai/config/:provider', superAdminAuth, async (req, res) => {
     config.providers = config.providers.filter(item => item.id !== req.params.provider);
     await config.save();
   }
+  await audit(req, 'delete', 'ai_provider', req.params.provider);
   res.json({ ok: true });
 });
 
-app.post('/api/ai/generate-questions', adminAuth, async (req, res) => {
+app.post('/api/ai/generate-questions', adminAuth, rateLimit({ windowMs: 60 * 1000, max: 5, key: req => req.user.id }), async (req, res) => {
   const { provider, model, sourceText, count, type, difficulty, language, existingQuestions, instruction } = req.body;
   const requestedCount = Math.max(1, Math.min(50, Number(count) || 10));
   if (!sourceText || sourceText.trim().length < 30) return res.status(400).json({ error: 'المحتوى المصدر قصير جداً' });
   try {
     const questions = await generateWithAI({ provider, model, sourceText: sourceText.slice(0, 100000), count: requestedCount, type, difficulty, language, existingQuestions, instruction });
+    await audit(req, 'generate_questions', 'ai', provider || 'configured', { count: requestedCount, type, language });
     res.json({ questions, provider: provider || null, model: model || null });
   } catch (error) {
     console.error('AI question generation failed:', error);
@@ -360,6 +442,7 @@ app.post('/api/admins', superAdminAuth, async (req, res) => {
   if (!username || !password || !name) return res.status(400).json({ error: 'جميع البيانات مطلوبة' });
   if (await Admin.exists({ username })) return res.status(409).json({ error: 'اسم المستخدم موجود مسبقاً' });
   const admin = await Admin.create({ username, name, password: await bcrypt.hash(password, 10), isSuper: false });
+  await audit(req, 'create', 'admin', admin._id, { username, name });
   res.status(201).json({ id: admin._id, name: admin.name, username: admin.username, isSuper: admin.isSuper });
 });
 
@@ -368,6 +451,7 @@ app.put('/api/admins/:id', superAdminAuth, async (req, res) => {
   if (req.body.password) updates.password = await bcrypt.hash(req.body.password, 10);
   const admin = await Admin.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true }).select('-password');
   if (!admin) return res.status(404).json({ error: 'الأدمن غير موجود' });
+  await audit(req, 'update', 'admin', admin._id, { username: updates.username, name: updates.name, passwordChanged: Boolean(req.body.password) });
   res.json({ ...admin._doc, id: admin._id });
 });
 
@@ -376,6 +460,7 @@ app.delete('/api/admins/:id', superAdminAuth, async (req, res) => {
   if (!admin) return res.status(404).json({ error: 'الأدمن غير موجود' });
   if (admin.isSuper) return res.status(403).json({ error: 'لا يمكن حذف المدير العام' });
   await admin.deleteOne();
+  await audit(req, 'delete', 'admin', admin._id, { username: admin.username });
   res.json({ ok: true });
 });
 
@@ -384,7 +469,7 @@ app.get('/api/system/backup', adminAuth, async (req, res) => {
   const data = {
     version: 1,
     createdAt: new Date().toISOString(),
-    admins: await Admin.find().lean(),
+    admins: await Admin.find().select('-password').lean(),
     departments: await Dept.find().lean(),
     subjects: await Sub.find().lean(),
     templates: await Template.find().lean(),
@@ -395,13 +480,14 @@ app.get('/api/system/backup', adminAuth, async (req, res) => {
     attempts: await Attempt.find().lean()
   };
   res.header('Content-Disposition', 'attachment; filename="e-nile-backup.json"');
+  await audit(req, 'export', 'system_backup', undefined, { version: data.version });
   res.send(JSON.stringify(data, null, 2));
 });
 
 app.post('/api/system/restore', adminAuth, async (req, res) => {
   const backup = req.body;
   const collections = [
-    ['admins', Admin], ['departments', Dept], ['subjects', Sub], ['templates', Template],
+    ['departments', Dept], ['subjects', Sub], ['templates', Template],
     ['rooms', Room], ['students', Student], ['departmentStudents', DeptStudent],
     ['roomStudents', RoomStudent], ['attempts', Attempt]
   ];
@@ -411,6 +497,7 @@ app.post('/api/system/restore', adminAuth, async (req, res) => {
   try {
     for (const [, Model] of collections) await Model.deleteMany({});
     for (const [key, Model] of collections) if (backup[key].length) await Model.insertMany(backup[key], { ordered: true });
+    await audit(req, 'restore', 'system_backup', undefined, { version: backup.version });
     res.json({ ok: true });
   } catch (err) {
     console.error('Restore failed:', err);
@@ -420,6 +507,7 @@ app.post('/api/system/restore', adminAuth, async (req, res) => {
 
 app.post('/api/system/reset', adminAuth, async (req, res) => {
   await Dept.deleteMany({}); await Sub.deleteMany({}); await Room.deleteMany({}); await Student.deleteMany({}); await DeptStudent.deleteMany({}); await RoomStudent.deleteMany({}); await Attempt.deleteMany({}); await Template.deleteMany({});
+  await audit(req, 'reset', 'system');
   res.json({ ok: true });
 });
 
@@ -581,11 +669,15 @@ app.get('/api/rooms/:id/reports', adminAuth, async (req, res) => {
 });
 
 app.post('/api/rooms/:id/open', adminAuth, async (req, res) => {
-  res.json(await Room.findByIdAndUpdate(req.params.id, { isOpen: true, status: 'active' }, { new: true }));
+  const room = await Room.findByIdAndUpdate(req.params.id, { isOpen: true, status: 'active' }, { new: true });
+  await audit(req, 'open', 'room', req.params.id);
+  res.json(room);
 });
 
 app.post('/api/rooms/:id/close', adminAuth, async (req, res) => {
-  res.json(await Room.findByIdAndUpdate(req.params.id, { isOpen: false, status: 'closed' }, { new: true }));
+  const room = await Room.findByIdAndUpdate(req.params.id, { isOpen: false, status: 'closed' }, { new: true });
+  await audit(req, 'close', 'room', req.params.id);
+  res.json(room);
 });
 
 // ===== Student Routes =====
@@ -605,6 +697,7 @@ async function updateScheduledRooms() {
 setInterval(() => updateScheduledRooms().catch(err => console.error('Schedule update failed:', err)), 30000);
 
 app.post('/api/attempts/start', auth, async (req, res) => {
+  if (req.user.role !== 'student') return res.status(403).json({ error: 'هذه العملية للطلاب فقط' });
   await updateScheduledRooms();
   const room = await Room.findById(req.body.roomId);
   if (!room || !room.isOpen) return res.status(403).json({ error: 'القاعة مغلقة' });
@@ -616,12 +709,17 @@ app.post('/api/attempts/start', auth, async (req, res) => {
 
 app.post('/api/attempts/:id/answer', auth, async (req, res) => {
   const attempt = await Attempt.findById(req.params.id);
-  if (attempt) { attempt.answers[req.body.qId] = req.body.cId; await attempt.save(); }
+  if (!attempt) return res.status(404).json({ error: 'المحاولة غير موجودة' });
+  if (req.user.role !== 'student' || String(attempt.studentId) !== String(req.user.id)) return res.status(403).json({ error: 'لا تملك هذه المحاولة' });
+  if (attempt.submittedAt) return res.status(409).json({ error: 'تم تسليم المحاولة' });
+  attempt.answers[req.body.qId] = req.body.cId; await attempt.save();
   res.json({ ok: true });
 });
 
 app.post('/api/attempts/:id/violation', auth, async (req, res) => {
   const attempt = await Attempt.findById(req.params.id);
+  if (!attempt) return res.status(404).json({ error: 'المحاولة غير موجودة' });
+  if (req.user.role !== 'student' || String(attempt.studentId) !== String(req.user.id)) return res.status(403).json({ error: 'لا تملك هذه المحاولة' });
   if (attempt) {
     let imgPath = null;
     if (req.body.image) {
@@ -637,6 +735,9 @@ app.post('/api/attempts/:id/violation', auth, async (req, res) => {
 
 app.post('/api/attempts/:id/submit', auth, async (req, res) => {
   const attempt = await Attempt.findById(req.params.id);
+  if (!attempt) return res.status(404).json({ error: 'المحاولة غير موجودة' });
+  if (req.user.role !== 'student' || String(attempt.studentId) !== String(req.user.id)) return res.status(403).json({ error: 'لا تملك هذه المحاولة' });
+  if (attempt.submittedAt) return res.status(409).json({ error: 'تم تسليم المحاولة مسبقاً' });
   if (attempt) {
     attempt.submittedAt = new Date();
     const room = await Room.findById(attempt.roomId);
@@ -646,6 +747,7 @@ app.post('/api/attempts/:id/submit', auth, async (req, res) => {
     });
     attempt.score = score; attempt.total = room.questions.reduce((s, q) => s + (q.points || 1), 0);
     await attempt.save();
+    await audit(req, 'submit', 'attempt', attempt._id, { roomId: attempt.roomId });
     res.json({ ok: true, score, total: attempt.total, allowReview: room.isGradesPublished && room.protection?.allowReview });
   }
 });
