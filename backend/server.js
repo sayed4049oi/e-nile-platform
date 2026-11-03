@@ -60,7 +60,8 @@ const AiConfig = mongoose.model('AiConfig', new mongoose.Schema({
   }]
 }));
 
-const JWT_SECRET = process.env.JWT_SECRET || 'secret';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) throw new Error('JWT_SECRET غير مضبوط في الخادم');
 const uuid = () => crypto.randomUUID();
 const ENCRYPTION_KEY = process.env.APP_ENCRYPTION_KEY;
 
@@ -81,6 +82,26 @@ function decryptSecret(value) {
   const decipher = crypto.createDecipheriv('aes-256-gcm', encryptionKey(), Buffer.from(iv, 'base64url'));
   decipher.setAuthTag(Buffer.from(tag, 'base64url'));
   return Buffer.concat([decipher.update(Buffer.from(encrypted, 'base64url')), decipher.final()]).toString('utf8');
+}
+
+function validateProviderUrl(value) {
+  let url;
+  try { url = new URL(value); } catch { throw new Error('عنوان API غير صالح'); }
+  const localHost = /^(localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|::1)$/i.test(url.hostname);
+  if (url.protocol !== 'https:' && !(process.env.NODE_ENV !== 'production' && url.protocol === 'http:' && localHost)) {
+    throw new Error('عنوان API يجب أن يستخدم HTTPS');
+  }
+  if (url.username || url.password || (!localHost && /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.)/.test(url.hostname))) {
+    throw new Error('عنوان API داخلي أو يحتوي بيانات اعتماد غير مسموح');
+  }
+  return url.toString().replace(/\/+$/, '');
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 30000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try { return await fetch(url, { ...options, signal: controller.signal }); }
+  finally { clearTimeout(timer); }
 }
 
 // ===== Middlewares =====
@@ -155,16 +176,16 @@ ${sourceText}`;
   const generateForProvider = async (selectedProvider, providerCount) => {
     const apiKey = decryptSecret(selectedProvider.encryptedKey);
     const protocol = selectedProvider.protocol || 'openai';
-    const baseUrl = String(selectedProvider.baseUrl || (protocol === 'anthropic' ? 'https://api.anthropic.com/v1' : 'https://api.openai.com/v1')).replace(/\/+$/, '');
+    const baseUrl = validateProviderUrl(selectedProvider.baseUrl || (protocol === 'anthropic' ? 'https://api.anthropic.com/v1' : 'https://api.openai.com/v1'));
     const selectedModel = model || selectedProvider.model || await discoverModel({ protocol, baseUrl, apiKey });
     const requestPrompt = prompt.replace(`exactly ${count}`, `exactly ${providerCount}`);
     const response = protocol === 'anthropic'
-      ? await fetch(`${baseUrl}/messages`, {
+      ? await fetchWithTimeout(`${baseUrl}/messages`, {
         method: 'POST',
         headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: selectedModel, max_tokens: 4096, temperature: 0.2, system: 'Return JSON only.', messages: [{ role: 'user', content: requestPrompt }] })
       })
-      : await fetch(`${baseUrl}/chat/completions`, {
+      : await fetchWithTimeout(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: selectedModel, temperature: 0.2, messages: [{ role: 'system', content: 'Return JSON only.' }, { role: 'user', content: requestPrompt }] })
@@ -177,14 +198,16 @@ ${sourceText}`;
     return normalizeQuestions(extractJson(text || ''), providerCount);
   };
   const providerCount = Math.max(1, Math.ceil(count / selectedProviders.length));
-  const batches = await Promise.all(selectedProviders.map(item => generateForProvider(item, providerCount)));
+  const results = await Promise.allSettled(selectedProviders.map(item => generateForProvider(item, providerCount)));
+  const batches = results.filter(result => result.status === 'fulfilled').map(result => result.value);
+  if (!batches.length) throw new Error(results.find(result => result.status === 'rejected')?.reason?.message || 'تعذر الاتصال بمزودي الذكاء الاصطناعي');
   return batches.flat().slice(0, count);
 }
 
 async function discoverModel({ protocol, baseUrl, apiKey }) {
   if (protocol === 'anthropic') throw new Error('حدد موديل Anthropic يدويًا لأن هذا المزود لا يوفر اكتشاف موديلات عامًا');
   if (!apiKey) throw new Error('أضف مفتاح API أو حدد الموديل يدويًا');
-  const response = await fetch(`${baseUrl}/models`, { headers: { Authorization: `Bearer ${apiKey}` } });
+  const response = await fetchWithTimeout(`${baseUrl}/models`, { headers: { Authorization: `Bearer ${apiKey}` } });
   if (!response.ok) throw new Error('تعذر اكتشاف موديل مزود الذكاء الاصطناعي');
   const body = await response.json();
   const models = (body.data || []).map(item => item.id).filter(Boolean);
@@ -231,7 +254,7 @@ app.put('/api/ai/config', superAdminAuth, async (req, res) => {
     const id = String(req.body.id || crypto.randomUUID()).trim();
     const name = String(req.body.name || '').trim();
     const protocol = req.body.protocol === 'anthropic' ? 'anthropic' : 'openai';
-    const baseUrl = String(req.body.baseUrl || '').trim().replace(/\/+$/, '');
+    const baseUrl = validateProviderUrl(String(req.body.baseUrl || '').trim());
     const model = String(req.body.model || '').trim();
     const apiKey = String(req.body.apiKey || '').trim();
     if (!name) return res.status(400).json({ error: 'اسم المزود مطلوب' });
@@ -282,15 +305,15 @@ app.post('/api/ai/test/:provider', superAdminAuth, async (req, res) => {
     if (!provider?.encryptedKey) return res.status(404).json({ error: 'المزود أو مفتاحه غير موجود' });
     const apiKey = decryptSecret(provider.encryptedKey);
     const protocol = provider.protocol || 'openai';
-    const baseUrl = String(provider.baseUrl || (protocol === 'anthropic' ? 'https://api.anthropic.com/v1' : 'https://api.openai.com/v1')).replace(/\/+$/, '');
+    const baseUrl = validateProviderUrl(provider.baseUrl || (protocol === 'anthropic' ? 'https://api.anthropic.com/v1' : 'https://api.openai.com/v1'));
     const model = provider.model || await discoverModel({ protocol, baseUrl, apiKey });
     const response = protocol === 'anthropic'
-      ? await fetch(`${baseUrl}/messages`, {
+      ? await fetchWithTimeout(`${baseUrl}/messages`, {
         method: 'POST',
         headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
         body: JSON.stringify({ model, max_tokens: 32, messages: [{ role: 'user', content: 'Reply with the single word OK.' }] })
       })
-      : await fetch(`${baseUrl}/chat/completions`, {
+      : await fetchWithTimeout(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ model, max_tokens: 32, messages: [{ role: 'user', content: 'Reply with the single word OK.' }] })
@@ -327,12 +350,12 @@ app.post('/api/ai/generate-questions', adminAuth, async (req, res) => {
 });
 
 // ===== Admin Management =====
-app.get('/api/admins', adminAuth, async (req, res) => {
+app.get('/api/admins', superAdminAuth, async (req, res) => {
   const admins = await Admin.find().select('-password').sort({ name: 1 });
   res.json(admins.map(a => ({ ...a._doc, id: a._id })));
 });
 
-app.post('/api/admins', adminAuth, async (req, res) => {
+app.post('/api/admins', superAdminAuth, async (req, res) => {
   const { username, password, name } = req.body;
   if (!username || !password || !name) return res.status(400).json({ error: 'جميع البيانات مطلوبة' });
   if (await Admin.exists({ username })) return res.status(409).json({ error: 'اسم المستخدم موجود مسبقاً' });
@@ -340,7 +363,7 @@ app.post('/api/admins', adminAuth, async (req, res) => {
   res.status(201).json({ id: admin._id, name: admin.name, username: admin.username, isSuper: admin.isSuper });
 });
 
-app.put('/api/admins/:id', adminAuth, async (req, res) => {
+app.put('/api/admins/:id', superAdminAuth, async (req, res) => {
   const updates = { name: req.body.name, username: req.body.username };
   if (req.body.password) updates.password = await bcrypt.hash(req.body.password, 10);
   const admin = await Admin.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true }).select('-password');
@@ -348,7 +371,7 @@ app.put('/api/admins/:id', adminAuth, async (req, res) => {
   res.json({ ...admin._doc, id: admin._id });
 });
 
-app.delete('/api/admins/:id', adminAuth, async (req, res) => {
+app.delete('/api/admins/:id', superAdminAuth, async (req, res) => {
   const admin = await Admin.findById(req.params.id);
   if (!admin) return res.status(404).json({ error: 'الأدمن غير موجود' });
   if (admin.isSuper) return res.status(403).json({ error: 'لا يمكن حذف المدير العام' });
