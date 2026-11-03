@@ -7,6 +7,29 @@ let globalRooms = [], globalDepts = [], globalSubjects = [], globalTemplates = [
 let activeRoomId = null, activeDeptId = null, activeSubjectId = null;
 let timerInterval = null, snapshotInterval = null;
 let activeQuestionId = null;
+let pendingAnswers = JSON.parse(localStorage.getItem('pendingAnswers') || '[]');
+
+function showConnectionStatus() {
+    const el = document.getElementById('connection-status');
+    if (!el) return;
+    el.textContent = navigator.onLine ? 'تم استعادة الاتصال' : 'أنت غير متصل - سيتم حفظ الإجابات محلياً';
+    el.className = `fixed bottom-4 right-4 z-[10000] rounded-xl px-4 py-3 text-sm font-bold shadow-lg ${navigator.onLine ? 'bg-green-600 text-white' : 'bg-amber-500 text-black'}`;
+    setTimeout(() => { if (navigator.onLine) el.classList.add('hidden'); }, 3500);
+}
+async function flushPendingAnswers() {
+    if (!navigator.onLine || !token || !pendingAnswers.length) return;
+    const remaining = [];
+    for (const answer of pendingAnswers) {
+        try {
+            const res = await fetch(API + `/attempts/${answer.attemptId}/answer`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ qId: answer.qId, cId: answer.cId }) });
+            if (!res.ok) remaining.push(answer);
+        } catch { remaining.push(answer); }
+    }
+    pendingAnswers = remaining;
+    localStorage.setItem('pendingAnswers', JSON.stringify(pendingAnswers));
+}
+window.addEventListener('online', () => { showConnectionStatus(); flushPendingAnswers(); });
+window.addEventListener('offline', showConnectionStatus);
 
 if(user && user.type === 'admin' && user.isSuper === undefined) { localStorage.clear(); location.reload(); }
 
@@ -109,8 +132,32 @@ async function renderAdminDashboard(view = 'students', deptId = null, subId = nu
 }
 
 // ================= SETTINGS & STUDENTS & DEPTS =================
-function loadSettings() { document.getElementById('admin-content').innerHTML = `<div class="max-w-3xl mx-auto space-y-6"><div class="bg-white border border-gray-200 rounded-2xl p-8 shadow-sm"><h3 class="text-xl font-bold text-gray-800 mb-4"><i class="fa-solid fa-download text-primary ml-2"></i> النسخ الاحتياطي</h3><button onclick="downloadBackup()" class="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold">تحميل نسخة احتياطية</button></div><div class="bg-red-50 border border-red-200 rounded-2xl p-8 shadow-sm"><h3 class="text-2xl font-bold text-red-700 mb-4">منطقة الخطر</h3><button onclick="confirmSystemWipe()" class="bg-red-600 text-white px-6 py-3 rounded-xl font-bold">حذف كل البيانات</button></div></div>`; }
+function loadSettings() {
+    document.getElementById('admin-content').innerHTML = `<div class="max-w-3xl mx-auto space-y-6">
+        <div class="bg-white border border-gray-200 rounded-2xl p-8 shadow-sm"><h3 class="text-xl font-bold text-gray-800 mb-4"><i class="fa-solid fa-download text-primary ml-2"></i> النسخ الاحتياطي والاسترجاع</h3><div class="flex flex-wrap gap-3"><button onclick="downloadBackup()" class="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold">تحميل نسخة احتياطية</button><button onclick="restoreBackup()" class="bg-green-600 text-white px-6 py-3 rounded-xl font-bold">استرجاع نسخة</button></div><p class="text-sm text-gray-500 mt-3">الاسترجاع يستبدل البيانات الحالية بالكامل.</p></div>
+        <div class="bg-purple-50 border border-purple-200 rounded-2xl p-8 shadow-sm"><h3 class="text-xl font-bold text-purple-800 mb-3"><i class="fa-solid fa-wand-magic-sparkles ml-2"></i> إعدادات الذكاء الاصطناعي</h3><p id="ai-config-status" class="text-sm text-purple-900">جاري قراءة إعدادات الخادم...</p><p class="text-xs text-gray-600 mt-2">يتم ضبط المفاتيح في متغيرات البيئة على Render، ولا تظهر داخل الموقع.</p></div>
+        <div class="bg-red-50 border border-red-200 rounded-2xl p-8 shadow-sm"><h3 class="text-2xl font-bold text-red-700 mb-4">منطقة الخطر</h3><button onclick="confirmSystemWipe()" class="bg-red-600 text-white px-6 py-3 rounded-xl font-bold">حذف كل البيانات</button></div></div>`;
+    fetch(API + '/ai/config', { headers: authHeaders() }).then(res => res.json()).then(config => {
+        const status = document.getElementById('ai-config-status');
+        if (status) status.textContent = config.configured ? `المزود: ${config.provider} | الموديل: ${config.model} | الحالة: جاهز` : 'لم يتم ضبط أي مفتاح API بعد.';
+    }).catch(() => {});
+}
 async function downloadBackup() { try { const res = await fetch(API + '/system/backup', { headers: authHeaders() }); const blob = await res.blob(); const url = window.URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'e-nile-backup.json'; a.click(); showToast('تم التحميل'); } catch(e) { Swal.fire('خطأ', 'تعذر التحميل', 'error'); } }
+async function restoreBackup() {
+    const input = document.createElement('input'); input.type = 'file'; input.accept = '.json';
+    input.onchange = async () => {
+        const file = input.files[0]; if (!file) return;
+        const confirmed = await Swal.fire({ title: 'استرجاع النسخة؟', text: 'سيتم استبدال جميع البيانات الحالية.', icon: 'warning', showCancelButton: true, confirmButtonText: 'استرجاع' });
+        if (!confirmed.isConfirmed) return;
+        try {
+            const backup = JSON.parse(await file.text());
+            const res = await fetch(API + '/system/restore', { method: 'POST', headers: authHeaders(), body: JSON.stringify(backup) });
+            const data = await res.json(); if (!res.ok) throw new Error(data.error);
+            await Swal.fire('تم الاسترجاع', 'تمت استعادة البيانات بنجاح.', 'success'); renderAdminDashboard('students');
+        } catch (e) { Swal.fire('خطأ', e.message || 'ملف النسخة غير صالح', 'error'); }
+    };
+    input.click();
+}
 async function confirmSystemWipe() { const { value: text } = await Swal.fire({ title: 'متأكد؟', html: `اكتب كلمة <b class="text-red-600">حذف</b> للتأكيد.`, input: 'text', icon: 'warning', showCancelButton: true, confirmButtonColor: '#ef4444', preConfirm: (val) => val === 'حذف' }); if (text) { await fetch(API + '/system/reset', { method: 'POST', headers: authHeaders() }); Swal.fire('تم التصفير', '', 'success').then(() => renderAdminDashboard('students')); } }
 
 function filterStudents(query) { document.querySelectorAll('.student-card').forEach(c => c.style.display = c.innerText.toLowerCase().includes(query.toLowerCase()) ? 'block' : 'none'); }
@@ -155,7 +202,8 @@ async function loadSubjectExams() {
                 <span class="px-2 py-1 text-xs font-bold rounded bg-gray-100 text-gray-600">${r.status === 'draft' ? 'مسودة' : r.status === 'active' ? 'مفتوح' : 'مغلق'}</span>
                 <span class="px-2 py-1 text-xs font-bold rounded ${r.isGradesPublished ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">${r.isGradesPublished ? 'الدرجات معلنة' : 'الدرجات مخفية'}</span>
             </div>
-            <p class="text-sm text-gray-500 mb-4">${r.durationMin} دقيقة | ${r.questions.length} سؤال</p>
+            <p class="text-sm text-gray-500 mb-2">${r.durationMin} دقيقة | ${r.questions.length} سؤال</p>
+            ${r.scheduledOpenAt || r.scheduledCloseAt ? `<p class="text-xs text-indigo-600 mb-4"><i class="fa-solid fa-clock ml-1"></i> ${r.scheduledOpenAt ? `فتح: ${new Date(r.scheduledOpenAt).toLocaleString('ar')}` : ''}${r.scheduledCloseAt ? ` | إغلاق: ${new Date(r.scheduledCloseAt).toLocaleString('ar')}` : ''}</p>` : ''}
             <button onclick="renderAdminDashboard('exam-builder', '${activeDeptId}', '${activeSubjectId}', '${r.id}')" class="mt-auto bg-primary text-white py-2 rounded-lg font-bold">دخول ورشة الامتحان</button>
         </div>
     `).join('')}</div>`;
@@ -168,7 +216,7 @@ async function deleteRoom(id) { if((await Swal.fire({title:'حذف الامتح�
 async function openCreateRoomModal(subId) {
     Swal.fire({ 
         title: 'إنشاء امتحان جديد', 
-        html: `<input id="n" class="swal2-input" placeholder="اسم الامتحان"><input id="t" type="number" class="swal2-input" value="60" placeholder="المدة (دقيقة)"><select id="tpl" class="swal2-select"><option value="">بدون قالب (إعدادات افتراضية)</option></select>`, 
+        html: `<input id="n" class="swal2-input" placeholder="اسم الامتحان"><input id="t" type="number" class="swal2-input" value="60" placeholder="المدة (دقيقة)"><label class="block text-right font-bold mt-3">فتح تلقائي (اختياري)</label><input id="open-at" type="datetime-local" class="swal2-input"><label class="block text-right font-bold mt-3">إغلاق تلقائي (اختياري)</label><input id="close-at" type="datetime-local" class="swal2-input"><select id="tpl" class="swal2-select"><option value="">بدون قالب (إعدادات افتراضية)</option></select>`, 
         didOpen: async () => {
             const tplRes = await fetch(API + '/templates', { headers: authHeaders() }); globalTemplates = await tplRes.json();
             const tplSelect = document.getElementById('tpl');
@@ -177,7 +225,10 @@ async function openCreateRoomModal(subId) {
         preConfirm: () => {
             const tplId = document.getElementById('tpl').value;
             const tpl = globalTemplates.find(x => x.id === tplId);
-            return { name: document.getElementById('n').value, durationMin: Number(document.getElementById('t').value), subjectId: subId, pin: '', protection: tpl ? tpl.protection : {} };
+            const scheduledOpenAt = document.getElementById('open-at').value || null;
+            const scheduledCloseAt = document.getElementById('close-at').value || null;
+            if (scheduledOpenAt && scheduledCloseAt && new Date(scheduledCloseAt) <= new Date(scheduledOpenAt)) { Swal.showValidationMessage('وقت الإغلاق يجب أن يكون بعد وقت الفتح'); return false; }
+            return { name: document.getElementById('n').value, durationMin: Number(document.getElementById('t').value), subjectId: subId, pin: '', scheduledOpenAt, scheduledCloseAt, protection: tpl ? tpl.protection : {} };
         }
     }).then(async r => { 
         if(r.isConfirmed && r.value.name) { 
@@ -205,6 +256,7 @@ async function loadExamBuilder() {
                 <button onclick="previewExam('${room.id}')" class="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg font-bold hover:bg-gray-200"><i class="fa-solid fa-eye ml-2"></i> معاينة</button>
                 <button onclick="openExamSettingsModal('${room.id}')" class="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg font-bold hover:bg-gray-200"><i class="fa-solid fa-gear ml-2"></i> الإعدادات</button>
                 <button onclick="openImportQuestionsModal('${room.id}')" class="bg-indigo-50 text-indigo-700 px-4 py-2 rounded-lg font-bold hover:bg-indigo-100"><i class="fa-solid fa-file-import ml-2"></i> استيراد أسئلة</button>
+                <button onclick="openAIQuestionsModal('${room.id}')" class="bg-purple-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-purple-700"><i class="fa-solid fa-wand-magic-sparkles ml-2"></i> الذكاء الاصطناعي</button>
                 ${room.status === 'draft' ? `<button onclick="publishExam()" class="bg-green-500 text-white px-6 py-2 rounded-lg font-bold hover:bg-green-600 shadow-md"><i class="fa-solid fa-rocket ml-2"></i> رفع وفتح للطلاب</button>` : `<button onclick="closeRoom('${room.id}')" class="bg-red-500 text-white px-6 py-2 rounded-lg font-bold hover:bg-red-600 shadow-md"><i class="fa-solid fa-lock ml-2"></i> قفل القاعة</button>`}
             </div>
         </div>
@@ -352,9 +404,9 @@ function openExamSettingsModal(roomId) {
     const room = globalRooms.find(r => r.id === roomId);
     Swal.fire({
         title: 'إعدادات الامتحان', width: '650px',
-        html: `<div class="text-right space-y-4 mt-4"><div class="grid grid-cols-2 gap-4"><div><label class="block text-sm font-bold mb-1">اسم الامتحان</label><input type="text" id="set-name" class="w-full p-3 border rounded-xl" value="${room.name}"></div><div><label class="block text-sm font-bold mb-1">المدة (دقيقة)</label><input type="number" id="set-time" class="w-full p-3 border rounded-xl" value="${room.durationMin}"></div></div><div class="grid grid-cols-2 gap-4"><div><label class="block text-sm font-bold mb-1">رمز الدخول (PIN)</label><input type="text" id="set-pin" class="w-full p-3 border rounded-xl" value="${room.pin || ''}" placeholder="اتركه فارغاً لإلغاء الرمز"></div><div><label class="block text-sm font-bold mb-1">إعلان الدرجات</label><select id="set-grades" class="w-full p-3 border rounded-xl"><option value="false" ${!room.isGradesPublished ? 'selected' : ''}>مخفي (لحين المراجعة)</option><option value="true" ${room.isGradesPublished ? 'selected' : ''}>معلن للطلاب</option></select></div></div><hr class="my-4"><h4 class="font-bold text-primary mb-2">إعدادات الحماية:</h4><div class="grid grid-cols-2 gap-2"><label class="flex items-center p-3 bg-gray-50 rounded-xl border cursor-pointer"><input type="checkbox" id="bp1" ${room.protection?.preventCopy ? 'checked' : ''} class="ml-2"><span class="text-sm font-bold">منع النسخ</span></label><label class="flex items-center p-3 bg-gray-50 rounded-xl border cursor-pointer"><input type="checkbox" id="bp2" ${room.protection?.preventRightClick ? 'checked' : ''} class="ml-2"><span class="text-sm font-bold">منع كليك يمين</span></label><label class="flex items-center p-3 bg-gray-50 rounded-xl border cursor-pointer"><input type="checkbox" id="bp3" ${room.protection?.detectTabSwitch ? 'checked' : ''} class="ml-2"><span class="text-sm font-bold">كشف التبويب</span></label><label class="flex items-center p-3 bg-gray-50 rounded-xl border cursor-pointer"><input type="checkbox" id="bp4" ${room.protection?.enableCamera ? 'checked' : ''} class="ml-2"><span class="text-sm font-bold">كاميرا</span></label><label class="flex items-center p-3 bg-gray-50 rounded-xl border cursor-pointer"><input type="checkbox" id="bp5" ${room.protection?.allowReview ? 'checked' : ''} class="ml-2"><span class="text-sm font-bold">مراجعة الطالب</span></label><label class="flex items-center p-3 bg-gray-50 rounded-xl border cursor-pointer"><input type="checkbox" id="bp6" ${room.protection?.randomizeChoices ? 'checked' : ''} class="ml-2"><span class="text-sm font-bold">عشوائية اختيارات</span></label></div><button onclick="saveAsTemplate()" class="mt-4 text-sm text-blue-600 hover:underline"><i class="fa-solid fa-save ml-1"></i> حفظ هذه الإعدادات كقالب للاستخدام لاحقاً</button></div>`,
+        html: `<div class="text-right space-y-4 mt-4"><div class="grid grid-cols-2 gap-4"><div><label class="block text-sm font-bold mb-1">اسم الامتحان</label><input type="text" id="set-name" class="w-full p-3 border rounded-xl" value="${room.name}"></div><div><label class="block text-sm font-bold mb-1">المدة (دقيقة)</label><input type="number" id="set-time" class="w-full p-3 border rounded-xl" value="${room.durationMin}"></div></div><div class="grid grid-cols-2 gap-4"><div><label class="block text-sm font-bold mb-1">فتح تلقائي</label><input type="datetime-local" id="set-open-at" class="w-full p-3 border rounded-xl" value="${room.scheduledOpenAt ? new Date(room.scheduledOpenAt).toISOString().slice(0,16) : ''}"></div><div><label class="block text-sm font-bold mb-1">إغلاق تلقائي</label><input type="datetime-local" id="set-close-at" class="w-full p-3 border rounded-xl" value="${room.scheduledCloseAt ? new Date(room.scheduledCloseAt).toISOString().slice(0,16) : ''}"></div></div><div class="grid grid-cols-2 gap-4"><div><label class="block text-sm font-bold mb-1">رمز الدخول (PIN)</label><input type="text" id="set-pin" class="w-full p-3 border rounded-xl" value="${room.pin || ''}" placeholder="اتركه فارغاً لإلغاء الرمز"></div><div><label class="block text-sm font-bold mb-1">إعلان الدرجات</label><select id="set-grades" class="w-full p-3 border rounded-xl"><option value="false" ${!room.isGradesPublished ? 'selected' : ''}>مخفي (لحين المراجعة)</option><option value="true" ${room.isGradesPublished ? 'selected' : ''}>معلن للطلاب</option></select></div></div><hr class="my-4"><h4 class="font-bold text-primary mb-2">إعدادات الحماية:</h4><div class="grid grid-cols-2 gap-2"><label class="flex items-center p-3 bg-gray-50 rounded-xl border cursor-pointer"><input type="checkbox" id="bp1" ${room.protection?.preventCopy ? 'checked' : ''} class="ml-2"><span class="text-sm font-bold">منع النسخ</span></label><label class="flex items-center p-3 bg-gray-50 rounded-xl border cursor-pointer"><input type="checkbox" id="bp2" ${room.protection?.preventRightClick ? 'checked' : ''} class="ml-2"><span class="text-sm font-bold">منع كليك يمين</span></label><label class="flex items-center p-3 bg-gray-50 rounded-xl border cursor-pointer"><input type="checkbox" id="bp3" ${room.protection?.detectTabSwitch ? 'checked' : ''} class="ml-2"><span class="text-sm font-bold">كشف التبويب</span></label><label class="flex items-center p-3 bg-gray-50 rounded-xl border cursor-pointer"><input type="checkbox" id="bp4" ${room.protection?.enableCamera ? 'checked' : ''} class="ml-2"><span class="text-sm font-bold">كاميرا</span></label><label class="flex items-center p-3 bg-gray-50 rounded-xl border cursor-pointer"><input type="checkbox" id="bp5" ${room.protection?.allowReview ? 'checked' : ''} class="ml-2"><span class="text-sm font-bold">مراجعة الطالب</span></label><label class="flex items-center p-3 bg-gray-50 rounded-xl border cursor-pointer"><input type="checkbox" id="bp6" ${room.protection?.randomizeChoices ? 'checked' : ''} class="ml-2"><span class="text-sm font-bold">عشوائية اختيارات</span></label></div><button onclick="saveAsTemplate()" class="mt-4 text-sm text-blue-600 hover:underline"><i class="fa-solid fa-save ml-1"></i> حفظ هذه الإعدادات كقالب للاستخدام لاحقاً</button></div>`,
         confirmButtonText: 'حفظ الإعدادات', confirmButtonColor: '#10b981', showCancelButton: true,
-        preConfirm: () => { const name = document.getElementById('set-name').value; const durationMin = Number(document.getElementById('set-time').value); if (!name || !durationMin) return false; return { name, durationMin, pin: document.getElementById('set-pin').value, isGradesPublished: document.getElementById('set-grades').value === 'true', protection: { preventCopy: document.getElementById('bp1').checked, preventRightClick: document.getElementById('bp2').checked, detectTabSwitch: document.getElementById('bp3').checked, enableCamera: document.getElementById('bp4').checked, allowReview: document.getElementById('bp5').checked, randomizeChoices: document.getElementById('bp6').checked } }; }
+        preConfirm: () => { const name = document.getElementById('set-name').value; const durationMin = Number(document.getElementById('set-time').value); if (!name || !durationMin) return false; return { name, durationMin, scheduledOpenAt: document.getElementById('set-open-at').value || null, scheduledCloseAt: document.getElementById('set-close-at').value || null, pin: document.getElementById('set-pin').value, isGradesPublished: document.getElementById('set-grades').value === 'true', protection: { preventCopy: document.getElementById('bp1').checked, preventRightClick: document.getElementById('bp2').checked, detectTabSwitch: document.getElementById('bp3').checked, enableCamera: document.getElementById('bp4').checked, allowReview: document.getElementById('bp5').checked, randomizeChoices: document.getElementById('bp6').checked } }; }
     }).then(async r => { if (r.isConfirmed) { await fetch(API + `/rooms/${roomId}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(r.value) }); const rRes = await fetch(API + '/rooms', { headers: authHeaders() }); globalRooms = await rRes.json(); loadExamBuilder(); showToast('تم الحفظ'); } });
 }
 
@@ -394,6 +446,104 @@ async function openImportQuestionsModal(roomId) {
             return parsedQuestions;
         }
     }).then(async (r) => { if (r.isConfirmed) { await fetch(API + `/rooms/${roomId}/questions`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ questions: r.value }) }); Swal.fire('تم بنجاح', `تم استيراد ${r.value.length} سؤال.`, 'success'); const rRes = await fetch(API + '/rooms', { headers: authHeaders() }); globalRooms = await rRes.json(); loadExamBuilder(); } });
+}
+
+async function extractAIFileText(file) {
+    if (!file) return '';
+    const name = file.name.toLowerCase();
+    if (name.endsWith('.docx')) {
+        return (await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() })).value;
+    }
+    if (name.endsWith('.pdf')) {
+        const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+        let text = '';
+        for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+            const page = await pdf.getPage(pageNumber);
+            const content = await page.getTextContent();
+            text += content.items.map(item => item.str).join(' ') + '\n';
+        }
+        return text;
+    }
+    if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
+        const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+        return workbook.SheetNames.map(sheet => XLSX.utils.sheet_to_csv(workbook.Sheets[sheet])).join('\n');
+    }
+    throw new Error('الملف المدعوم يجب أن يكون PDF أو DOCX أو XLSX');
+}
+
+async function openAIQuestionsModal(roomId) {
+    const room = globalRooms.find(r => r.id === roomId);
+    if (!room) return;
+    Swal.fire({
+        title: 'إنشاء أسئلة بالذكاء الاصطناعي',
+        width: '720px',
+        html: `<div class="text-right space-y-3">
+            <div class="bg-purple-50 text-purple-900 p-3 rounded-xl text-sm">المفاتيح محفوظة في الخادم. لن يتم إرسالها إلى المتصفح أو تخزينها في المشروع.</div>
+            <div class="grid grid-cols-2 gap-3">
+                <select id="ai-provider" class="swal2-select" onchange="document.getElementById('ai-model').value=this.value==='grok'?'grok-2-latest':'gemini-2.0-flash'"><option value="gemini">Gemini</option><option value="grok">Grok</option></select>
+                <input id="ai-model" class="swal2-input" value="gemini-2.0-flash" placeholder="اسم الموديل">
+                <input id="ai-count" type="number" min="1" max="50" value="10" class="swal2-input" placeholder="عدد الأسئلة">
+                <select id="ai-type" class="swal2-select"><option value="mcq">اختيار من متعدد</option><option value="tf">صح أو خطأ</option><option value="essay">مقالية</option></select>
+                <select id="ai-difficulty" class="swal2-select"><option value="متوسط">متوسط</option><option value="سهل">سهل</option><option value="صعب">صعب</option></select>
+                <select id="ai-language" class="swal2-select"><option value="العربية">العربية</option><option value="English">English</option></select>
+            </div>
+            <label class="block font-bold">ملف المصدر</label>
+            <input id="ai-file" type="file" accept=".pdf,.docx,.xlsx,.xls" class="block w-full border p-3 rounded-xl bg-gray-50">
+            <textarea id="ai-text" class="w-full p-3 border rounded-xl h-28" placeholder="أو الصق محتوى المحاضرة هنا..."></textarea>
+            <textarea id="ai-instruction" class="w-full p-3 border rounded-xl h-20" placeholder="تعليمات إضافية اختيارية، مثل: ركز على الوحدة الثالثة"></textarea>
+            <label class="flex items-center gap-2 font-bold"><input id="ai-improve" type="checkbox"> تحسين أسئلة الامتحان الحالية بدل إنشاء أسئلة من الصفر</label>
+        </div>`,
+        confirmButtonText: 'تحليل وإنشاء مسودة',
+        confirmButtonColor: '#7c3aed',
+        showCancelButton: true,
+        cancelButtonText: 'إلغاء',
+        preConfirm: async () => {
+            const file = document.getElementById('ai-file').files[0];
+            const pastedText = document.getElementById('ai-text').value;
+            const sourceText = pastedText.trim() || await extractAIFileText(file);
+            if (sourceText.trim().length < 30) {
+                Swal.showValidationMessage('أرفق ملفاً أو أدخل محتوى لا يقل عن 30 حرفاً');
+                return false;
+            }
+            const improve = document.getElementById('ai-improve').checked;
+            const provider = document.getElementById('ai-provider').value;
+            const model = document.getElementById('ai-model').value.trim();
+            Swal.showLoading();
+            try {
+                const response = await fetch(API + '/ai/generate-questions', {
+                    method: 'POST',
+                    headers: authHeaders(),
+                    body: JSON.stringify({
+                        provider, model, sourceText,
+                        count: Number(document.getElementById('ai-count').value),
+                        type: document.getElementById('ai-type').value,
+                        difficulty: document.getElementById('ai-difficulty').value,
+                        language: document.getElementById('ai-language').value,
+                        instruction: document.getElementById('ai-instruction').value,
+                        existingQuestions: improve ? room.questions : null
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'تعذر إنشاء الأسئلة');
+                return data.questions;
+            } catch (error) {
+                Swal.showValidationMessage(error.message);
+                return false;
+            }
+        }
+    }).then(async result => {
+        if (!result.isConfirmed || !result.value?.length) return;
+        const questions = result.value;
+        const preview = questions.map((q, index) => `<div class="text-right border-b py-2"><b>${index + 1}. ${q.text}</b><div class="text-sm text-gray-500">${q.choices?.map(c => `${c.isCorrect ? '✓ ' : ''}${c.text}`).join(' | ') || 'سؤال مقالي'}</div></div>`).join('');
+        const approved = await Swal.fire({ title: `مسودة ${questions.length} سؤال`, html: `<div class="max-h-96 overflow-y-auto">${preview}</div>`, icon: 'info', showCancelButton: true, confirmButtonText: 'إضافة إلى الامتحان', cancelButtonText: 'إلغاء' });
+        if (!approved.isConfirmed) return;
+        const response = await fetch(API + `/rooms/${roomId}/questions`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ questions }) });
+        if (!response.ok) return Swal.fire('خطأ', 'تعذر إضافة الأسئلة إلى الامتحان', 'error');
+        const roomsResponse = await fetch(API + '/rooms', { headers: authHeaders() });
+        globalRooms = await roomsResponse.json();
+        loadExamBuilder();
+        showToast('تمت إضافة مسودة الأسئلة');
+    });
 }
 
 // ================= ADMIN EXTRA =================
@@ -462,8 +612,20 @@ function renderExamUI() {
 }
 window.jumpToQ = (idx) => { examState.currentIdx = idx; renderExamUI(); };
 window.toggleFlag = (qId) => { if(examState.flagged.includes(qId)) examState.flagged = examState.flagged.filter(id => id !== qId); else examState.flagged.push(qId); renderExamUI(); };
-async function saveAnswer(qId, cId) { examState.attempt.answers = examState.attempt.answers || {}; examState.attempt.answers[qId] = cId; renderExamUI(); if(!examState.isPreview) await fetch(API + `/attempts/${examState.attempt.id}/answer`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ qId, cId }) }); }
-async function saveEssayAnswer(qId, text) { examState.attempt.answers = examState.attempt.answers || {}; examState.attempt.answers[qId] = text; if(!examState.isPreview) await fetch(API + `/attempts/${examState.attempt.id}/answer`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ qId, cId: text }) }); }
+async function saveAnswer(qId, cId) {
+    examState.attempt.answers = examState.attempt.answers || {}; examState.attempt.answers[qId] = cId; renderExamUI();
+    if (examState.isPreview) return;
+    try {
+        const res = await fetch(API + `/attempts/${examState.attempt.id}/answer`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ qId, cId }) });
+        if (!res.ok) throw new Error('answer sync failed');
+    } catch {
+        pendingAnswers = pendingAnswers.filter(a => !(a.attemptId === examState.attempt.id && a.qId === qId));
+        pendingAnswers.push({ attemptId: examState.attempt.id, qId, cId });
+        localStorage.setItem('pendingAnswers', JSON.stringify(pendingAnswers));
+        showConnectionStatus();
+    }
+}
+async function saveEssayAnswer(qId, text) { return saveAnswer(qId, text); }
 function nextQ() { examState.currentIdx++; renderExamUI(); } function prevQ() { examState.currentIdx--; renderExamUI(); }
 function startTimer(sec) { clearInterval(timerInterval); let t = sec; timerInterval = setInterval(() => { if(t <= 0) { clearInterval(timerInterval); submitExam(true); } const m = Math.floor(t/60).toString().padStart(2, '0'), s = (t%60).toString().padStart(2, '0'); const el = document.getElementById('timer-display'); if(el) el.innerText = `${m}:${s}`; t--; }, 1000); }
 function startSnapshots(prot) { clearInterval(snapshotInterval); if(prot.enableCamera) { snapshotInterval = setInterval(() => { const vid = document.getElementById('cam-feed'); if(vid && vid.srcObject) { const canvas = document.createElement('canvas'); canvas.width = vid.videoWidth; canvas.height = vid.videoHeight; canvas.getContext('2d').drawImage(vid, 0, 0); const imgBase64 = canvas.toDataURL('image/jpeg'); fetch(API + `/attempts/${examState.attempt.id}/violation`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ type: 'periodic_snapshot', image: imgBase64 }) }); } }, 180000); } }
