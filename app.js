@@ -79,6 +79,7 @@ async function renderAdminDashboard(view = 'students', deptId = null, subId = nu
         const [resDepts, resSubs] = await Promise.all([fetch(API + '/departments', { headers: authHeaders() }), fetch(API + '/subjects', { headers: authHeaders() })]);
         globalDepts = await resDepts.json(); globalSubjects = await resSubs.json();
     }
+
     if (view === 'subject-details' || view === 'rooms' || view === 'room-details' || view === 'exam-builder') {
         const resRooms = await fetch(API + '/rooms', { headers: authHeaders() }); globalRooms = await resRooms.json();
     }
@@ -91,16 +92,16 @@ async function renderAdminDashboard(view = 'students', deptId = null, subId = nu
 
     app.innerHTML = `
     <div class="flex h-screen bg-gray-50 overflow-hidden">
-        <aside class="w-64 bg-primary text-white flex flex-col shadow-2xl">
-            <div class="h-20 flex items-center justify-center gap-3 border-b border-blue-800"><img src="logo.jpg" alt="شعار كلية شرق النيل" class="w-12 h-12 object-contain rounded-lg bg-white"><span class="text-xl font-bold">كلية شرق النيل</span></div>
-            <nav class="flex-1 p-4 space-y-2">
-                <a onclick="renderAdminDashboard('students')" class="flex items-center px-4 py-3 ${view==='students' ? 'bg-blue-800' : 'hover:bg-blue-800'} rounded-xl font-semibold cursor-pointer"><i class="fa-solid fa-users w-6"></i> قائمة الطلاب</a>
-                <a onclick="renderAdminDashboard('departments')" class="flex items-center px-4 py-3 ${view==='departments' || view==='subjects' || view==='subject-details' || view==='exam-builder' ? 'bg-blue-800' : 'hover:bg-blue-800'} rounded-xl font-semibold cursor-pointer"><i class="fa-solid fa-building-columns w-6"></i> الأقسام والمواد</a>
-                <a onclick="renderAdminDashboard('rooms')" class="flex items-center px-4 py-3 ${view==='rooms' || view==='room-details' ? 'bg-blue-800' : 'hover:bg-blue-800'} rounded-xl font-semibold cursor-pointer"><i class="fa-solid fa-door-open w-6"></i> كل القاعات</a>
-                ${user.isSuper ? `<a onclick="renderAdminDashboard('admins')" class="flex items-center px-4 py-3 ${view==='admins' ? 'bg-blue-800' : 'hover:bg-blue-800'} rounded-xl font-semibold cursor-pointer"><i class="fa-solid fa-users-gear w-6"></i> إدارة الأدمنز</a>` : ''}
-                ${user.isSuper ? `<a onclick="renderAdminDashboard('settings')" class="flex items-center px-4 py-3 ${view==='settings' ? 'bg-red-600' : 'hover:bg-red-600 text-red-200'} rounded-xl font-semibold cursor-pointer mt-4 border-t border-blue-800"><i class="fa-solid fa-triangle-exclamation w-6"></i> إعدادات النظام</a>` : ''}
+        <aside id="admin-sidebar" class="admin-sidebar bg-primary text-white flex flex-col shadow-2xl">
+            <div class="h-20 flex items-center justify-center gap-3 border-b border-blue-800"><img src="logo.jpg" alt="شعار كلية شرق النيل" class="w-12 h-12 object-contain rounded-lg bg-white"><span class="sidebar-label text-xl font-bold">كلية شرق النيل</span></div>
+            <nav class="flex-1 p-3 space-y-2">
+                <a title="قائمة الطلاب" onclick="renderAdminDashboard('students')" class="sidebar-link ${view==='students' ? 'active' : ''}"><i class="fa-solid fa-users"></i><span class="sidebar-label">قائمة الطلاب</span></a>
+                <a title="الأقسام والمواد" onclick="renderAdminDashboard('departments')" class="sidebar-link ${view==='departments' || view==='subjects' || view==='subject-details' || view==='exam-builder' ? 'active' : ''}"><i class="fa-solid fa-building-columns"></i><span class="sidebar-label">الأقسام والمواد</span></a>
+                <a title="كل القاعات" onclick="renderAdminDashboard('rooms')" class="sidebar-link ${view==='rooms' || view==='room-details' ? 'active' : ''}"><i class="fa-solid fa-door-open"></i><span class="sidebar-label">كل القاعات</span></a>
+                ${user.isSuper ? `<a title="إدارة الأدمنز" onclick="renderAdminDashboard('admins')" class="sidebar-link ${view==='admins' ? 'active' : ''}"><i class="fa-solid fa-users-gear"></i><span class="sidebar-label">إدارة الأدمنز</span></a>` : ''}
+                ${user.isSuper ? `<a title="إعدادات النظام" onclick="renderAdminDashboard('settings')" class="sidebar-link danger ${view==='settings' ? 'active' : ''}"><i class="fa-solid fa-gear"></i><span class="sidebar-label">إعدادات النظام</span></a>` : ''}
             </nav>
-            <div class="p-4 border-t border-blue-800"><div class="flex items-center mb-4"><div class="w-10 h-10 rounded-full bg-blue-400 flex items-center justify-center font-bold text-lg">${user.name[0]}</div><div class="mr-3"><p class="font-bold text-sm">${user.name}</p><p class="text-xs text-blue-300">${user.isSuper ? 'مدير عام' : 'أدمن'}</p></div></div><button onclick="logout()" class="w-full py-2 bg-red-500 hover:bg-red-600 rounded-lg font-bold">خروج</button></div>
+            <div class="sidebar-footer p-3 border-t border-blue-800"><div class="flex items-center mb-3"><div class="w-10 h-10 shrink-0 rounded-full bg-blue-400 flex items-center justify-center font-bold text-lg">${user.name[0]}</div><div class="sidebar-label mr-3 min-w-0"><p class="font-bold text-sm truncate">${user.name}</p><p class="text-xs text-blue-300">${user.isSuper ? 'مدير عام' : 'أدمن'}</p></div></div><button onclick="logout()" title="خروج" class="sidebar-logout"><i class="fa-solid fa-right-from-bracket"></i><span class="sidebar-label">خروج</span></button></div>
         </aside>
         <main class="flex-1 flex flex-col overflow-y-auto">
             <header class="bg-white shadow-sm h-20 flex items-center px-8 justify-between">
@@ -119,7 +120,6 @@ async function renderAdminDashboard(view = 'students', deptId = null, subId = nu
             <div class="p-8" id="admin-content"></div>
         </main>
     </div>`;
-    
     if(view === 'students') loadStudentsList();
     else if(view === 'departments') loadDepartments();
     else if(view === 'subjects') loadSubjects();
@@ -135,12 +135,42 @@ async function renderAdminDashboard(view = 'students', deptId = null, subId = nu
 function loadSettings() {
     document.getElementById('admin-content').innerHTML = `<div class="max-w-3xl mx-auto space-y-6">
         <div class="bg-white border border-gray-200 rounded-2xl p-8 shadow-sm"><h3 class="text-xl font-bold text-gray-800 mb-4"><i class="fa-solid fa-download text-primary ml-2"></i> النسخ الاحتياطي والاسترجاع</h3><div class="flex flex-wrap gap-3"><button onclick="downloadBackup()" class="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold">تحميل نسخة احتياطية</button><button onclick="restoreBackup()" class="bg-green-600 text-white px-6 py-3 rounded-xl font-bold">استرجاع نسخة</button></div><p class="text-sm text-gray-500 mt-3">الاسترجاع يستبدل البيانات الحالية بالكامل.</p></div>
-        <div class="bg-purple-50 border border-purple-200 rounded-2xl p-8 shadow-sm"><h3 class="text-xl font-bold text-purple-800 mb-3"><i class="fa-solid fa-wand-magic-sparkles ml-2"></i> إعدادات الذكاء الاصطناعي</h3><p id="ai-config-status" class="text-sm text-purple-900">جاري قراءة إعدادات الخادم...</p><p class="text-xs text-gray-600 mt-2">يتم ضبط المفاتيح في متغيرات البيئة على Render، ولا تظهر داخل الموقع.</p></div>
+        <div class="bg-purple-50 border border-purple-200 rounded-2xl p-8 shadow-sm"><h3 class="text-xl font-bold text-purple-800 mb-3"><i class="fa-solid fa-wand-magic-sparkles ml-2"></i> إعدادات الذكاء الاصطناعي</h3><p id="ai-config-status" class="text-sm text-purple-900 mb-4">جاري قراءة إعدادات الخادم...</p><div class="grid md:grid-cols-2 gap-4"><div class="bg-white rounded-xl p-4 border"><h4 class="font-bold mb-2">Gemini</h4><p id="gemini-key-status" class="text-xs text-gray-500 mb-3">غير مضبوط</p><button onclick="editAIConfig('gemini')" class="bg-purple-600 text-white px-3 py-2 rounded-lg text-sm font-bold">إضافة/تعديل المفتاح</button><button onclick="deleteAIConfig('gemini')" class="mr-2 bg-red-50 text-red-600 px-3 py-2 rounded-lg text-sm font-bold">مسح</button></div><div class="bg-white rounded-xl p-4 border"><h4 class="font-bold mb-2">Grok</h4><p id="grok-key-status" class="text-xs text-gray-500 mb-3">غير مضبوط</p><button onclick="editAIConfig('grok')" class="bg-purple-600 text-white px-3 py-2 rounded-lg text-sm font-bold">إضافة/تعديل المفتاح</button><button onclick="deleteAIConfig('grok')" class="mr-2 bg-red-50 text-red-600 px-3 py-2 rounded-lg text-sm font-bold">مسح</button></div></div><p class="text-xs text-gray-600 mt-3">المفتاح يُرسل عبر اتصال آمن ويُحفظ مشفراً في قاعدة البيانات. لا يتم عرضه كاملاً مرة أخرى.</p></div>
         <div class="bg-red-50 border border-red-200 rounded-2xl p-8 shadow-sm"><h3 class="text-2xl font-bold text-red-700 mb-4">منطقة الخطر</h3><button onclick="confirmSystemWipe()" class="bg-red-600 text-white px-6 py-3 rounded-xl font-bold">حذف كل البيانات</button></div></div>`;
     fetch(API + '/ai/config', { headers: authHeaders() }).then(res => res.json()).then(config => {
         const status = document.getElementById('ai-config-status');
         if (status) status.textContent = config.configured ? `المزود: ${config.provider} | الموديل: ${config.model} | الحالة: جاهز` : 'لم يتم ضبط أي مفتاح API بعد.';
+        ['gemini', 'grok'].forEach(provider => {
+            const item = config.providers?.[provider];
+            const el = document.getElementById(`${provider}-key-status`);
+            if (el && item) el.textContent = item.configured ? `جاهز | الموديل: ${item.model}${item.last4 ? ` | ينتهي بـ ****${item.last4}` : ''}` : 'غير مضبوط';
+        });
     }).catch(() => {});
+}
+async function editAIConfig(provider) {
+    const defaults = provider === 'grok' ? 'grok-2-latest' : 'gemini-2.0-flash';
+    const result = await Swal.fire({
+        title: `إعداد ${provider === 'grok' ? 'Grok' : 'Gemini'}`,
+        html: `<input id="ai-model-input" class="swal2-input" value="${defaults}" placeholder="اسم الموديل"><input id="ai-key-input" type="password" class="swal2-input" placeholder="مفتاح API الجديد"><p class="text-xs text-gray-500">اترك المفتاح فارغاً للاحتفاظ بالمفتاح الحالي.</p>`,
+        showCancelButton: true,
+        confirmButtonText: 'حفظ مشفراً',
+        preConfirm: () => ({ model: document.getElementById('ai-model-input').value.trim(), apiKey: document.getElementById('ai-key-input').value.trim() })
+    });
+    if (!result.isConfirmed) return;
+    const response = await fetch(API + '/ai/config', { method: 'PUT', headers: authHeaders(), body: JSON.stringify({ provider, ...result.value }) });
+    const data = await response.json();
+    if (!response.ok) return Swal.fire('خطأ', data.error || 'تعذر حفظ الإعدادات', 'error');
+    showToast('تم حفظ إعدادات الذكاء الاصطناعي بشكل مشفر');
+    loadSettings();
+}
+async function deleteAIConfig(provider) {
+    const result = await Swal.fire({ title: 'مسح مفتاح API؟', text: 'لن يستطيع النظام استخدام هذا المزود بعد المسح.', icon: 'warning', showCancelButton: true, confirmButtonText: 'مسح', confirmButtonColor: '#dc2626' });
+    if (!result.isConfirmed) return;
+    const response = await fetch(API + `/ai/config/${provider}`, { method: 'DELETE', headers: authHeaders() });
+    const data = await response.json();
+    if (!response.ok) return Swal.fire('خطأ', data.error || 'تعذر مسح المفتاح', 'error');
+    showToast('تم مسح المفتاح');
+    loadSettings();
 }
 async function downloadBackup() { try { const res = await fetch(API + '/system/backup', { headers: authHeaders() }); const blob = await res.blob(); const url = window.URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'e-nile-backup.json'; a.click(); showToast('تم التحميل'); } catch(e) { Swal.fire('خطأ', 'تعذر التحميل', 'error'); } }
 async function restoreBackup() {
@@ -214,9 +244,9 @@ async function duplicateExam(id) {
 }
 async function deleteRoom(id) { if((await Swal.fire({title:'حذف الامتحان؟',icon:'warning',showCancelButton:true})).isConfirmed) { await fetch(API + '/rooms/' + id, { method: 'DELETE', headers: authHeaders() }); const rRes = await fetch(API + '/rooms', { headers: authHeaders() }); globalRooms = await rRes.json(); loadSubjectExams(); } }
 async function openCreateRoomModal(subId) {
-    Swal.fire({ 
-        title: 'إنشاء امتحان جديد', 
-        html: `<input id="n" class="swal2-input" placeholder="اسم الامتحان"><input id="t" type="number" class="swal2-input" value="60" placeholder="المدة (دقيقة)"><label class="block text-right font-bold mt-3">فتح تلقائي (اختياري)</label><input id="open-at" type="datetime-local" class="swal2-input"><label class="block text-right font-bold mt-3">إغلاق تلقائي (اختياري)</label><input id="close-at" type="datetime-local" class="swal2-input"><select id="tpl" class="swal2-select"><option value="">بدون قالب (إعدادات افتراضية)</option></select>`, 
+    Swal.fire({
+        title: 'إنشاء امتحان جديد',
+        html: `<input id="n" class="swal2-input" placeholder="اسم الامتحان"><input id="t" type="number" class="swal2-input" value="60" placeholder="المدة (دقيقة)"><label class="block text-right font-bold mt-3">فتح تلقائي (اختياري)</label><input id="open-at" type="datetime-local" class="swal2-input"><label class="block text-right font-bold mt-3">إغلاق تلقائي (اختياري)</label><input id="close-at" type="datetime-local" class="swal2-input"><select id="tpl" class="swal2-select"><option value="">بدون قالب (إعدادات افتراضية)</option></select>`,
         didOpen: async () => {
             const tplRes = await fetch(API + '/templates', { headers: authHeaders() }); globalTemplates = await tplRes.json();
             const tplSelect = document.getElementById('tpl');
@@ -230,11 +260,11 @@ async function openCreateRoomModal(subId) {
             if (scheduledOpenAt && scheduledCloseAt && new Date(scheduledCloseAt) <= new Date(scheduledOpenAt)) { Swal.showValidationMessage('وقت الإغلاق يجب أن يكون بعد وقت الفتح'); return false; }
             return { name: document.getElementById('n').value, durationMin: Number(document.getElementById('t').value), subjectId: subId, pin: '', scheduledOpenAt, scheduledCloseAt, protection: tpl ? tpl.protection : {} };
         }
-    }).then(async r => { 
-        if(r.isConfirmed && r.value.name) { 
-            const res = await fetch(API + '/rooms', { method: 'POST', headers: authHeaders(), body: JSON.stringify(r.value) }); 
-            const room = await res.json(); renderAdminDashboard('exam-builder', activeDeptId, subId, room.id); 
-        } 
+    }).then(async r => {
+        if(r.isConfirmed && r.value.name) {
+            const res = await fetch(API + '/rooms', { method: 'POST', headers: authHeaders(), body: JSON.stringify(r.value) });
+            const room = await res.json(); renderAdminDashboard('exam-builder', activeDeptId, subId, room.id);
+        }
     });
 }
 
@@ -303,7 +333,7 @@ function renderQuestionEditor(room, qId) {
             </div>
         </div>
         <div><label class="block font-bold text-gray-700 mb-2">نص السؤال:</label><textarea id="q-text" class="w-full p-4 border rounded-xl h-32 outline-none focus:border-primary text-lg">${q.text}</textarea></div>
-        
+
         ${isMcq ? `
         <div>
             <label class="block font-bold text-gray-700 mb-2 flex justify-between items-center"><span>الاختيارات (حدد الدائرة للإجابة الصحيحة):</span><button onclick="addChoiceInput()" class="text-sm bg-blue-50 text-blue-600 px-3 py-1 rounded hover:bg-blue-100 transition-colors"><i class="fa-solid fa-plus ml-1"></i> إضافة اختيار</button></label>
@@ -371,7 +401,7 @@ async function saveQuestionChanges(roomId, qId) {
     }
 
     if (!text.trim()) return showToast('أدخل نص السؤال', 'warning');
-    
+
     await fetch(API + `/rooms/${roomId}/questions/${qId}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify({ text, points, type: qType, choices }) });
     showToast('تم حفظ السؤال بنجاح');
     const rRes = await fetch(API + '/rooms', { headers: authHeaders() }); globalRooms = await rRes.json(); loadExamBuilder();
@@ -559,9 +589,9 @@ async function deleteAdmin(id, name) { if((await Swal.fire({ title: 'حذف؟', 
 // ================= STUDENT =================
 function renderStudentDashboard() { app.innerHTML = `<div class="min-h-screen bg-gray-50"><header class="bg-white shadow-sm"><div class="max-w-5xl mx-auto px-4 h-20 flex items-center justify-between"><h1 class="text-xl font-bold">بوابة الطالب</h1><button onclick="logout()" class="text-red-500 font-bold">خروج</button></div></header><main class="max-w-5xl mx-auto px-4 py-8"><h2 class="text-2xl font-bold mb-8">أهلاً ${user.name}</h2><div class="grid grid-cols-1 md:grid-cols-2 gap-6">${user.rooms.map(r => `<div class="bg-white p-6 rounded-2xl shadow-sm border"><h3 class="text-xl font-bold mb-4">${r.name}</h3><button onclick="showInstructions('${r.id}')" class="w-full bg-primary text-white py-3 rounded-xl font-bold">دخول</button></div>`).join('')}</div></main></div>`; }
 function showInstructions(roomId) { Swal.fire({ title: 'تعليمات', text: 'سيتم تشغيل الكاميرا، والغش مسجل.', icon: 'info', confirmButtonText: 'ابدأ' }).then(r => { if(r.isConfirmed) askForPin(roomId); }); }
-async function askForPin(roomId) { 
+async function askForPin(roomId) {
     const { value: pin } = await Swal.fire({ title: 'رمز الدخول', input: 'password', inputLabel: 'أدخل الرمز السري للامتحان (إن وجد)', showCancelButton: true, confirmButtonText: 'دخول', cancelButtonText: 'إلغاء' });
-    if(pin !== undefined) startExam(roomId, pin); 
+    if(pin !== undefined) startExam(roomId, pin);
 }
 async function startExam(roomId, pin = '') {
     try { const elem = document.documentElement; if (elem.requestFullscreen) { await elem.requestFullscreen(); } } catch (e) {}
@@ -573,7 +603,7 @@ async function startExam(roomId, pin = '') {
 function renderExamUI() {
     const { room, questions, currentIdx, flagged, isPreview } = examState; const q = questions[currentIdx]; const isFlagged = flagged.includes(q.id);
     let navHtml = questions.map((x, i) => { let cls = 'w-8 h-8 rounded-lg font-bold text-sm flex items-center justify-center cursor-pointer '; if (i === currentIdx) cls += 'bg-primary text-white'; else if (flagged.includes(x.id)) cls += 'bg-yellow-100 text-yellow-700'; else if (examState.attempt.answers && examState.attempt.answers[x.id] !== undefined) cls += 'bg-green-100 text-green-700'; else cls += 'bg-gray-100 text-gray-600'; return `<button onclick="jumpToQ(${i})" class="${cls}">${i+1}</button>`; }).join('');
-    
+
     let contentHtml = '';
     if (q.type === 'essay') {
         contentHtml = `<textarea id="essay-input" class="w-full p-4 border rounded-xl h-64 outline-none focus:border-primary text-lg" placeholder="اكتب إجابتك هنا..." oninput="saveEssayAnswer('${q.id}', this.value)">${examState.attempt.answers[q.id] || ''}</textarea>`;
@@ -641,7 +671,7 @@ function setupProtection(prot) {
     if(examState.isPreview) return;
     if(prot.preventRightClick) document.oncontextmenu = (e) => e.preventDefault(); if(prot.preventCopy) { document.oncopy = (e) => e.preventDefault(); document.body.style.userSelect = 'none'; }
     if(prot.enableCamera) { navigator.mediaDevices.getUserMedia({ video: true }).then(stream => { const vid = document.getElementById('cam-feed'); vid.srcObject = stream; vid.classList.remove('hidden'); }).catch(() => {}); }
-    
+
     // Anti-Screenshot logic
     window.addEventListener('keyup', (e) => {
         if (e.key === 'PrintScreen' || e.keyCode === 44) {

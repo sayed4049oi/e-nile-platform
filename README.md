@@ -17,6 +17,6 @@ I built this since 2023 using a phone and old laptop, learning Python and web de
 
 The frontend is served by the backend so that API requests and the static files use the same origin.
 
-**AI question generation:** set `AI_PROVIDER`, `AI_MODEL`, `GEMINI_API_KEY`, or `GROK_API_KEY` in `backend/.env` (or Render environment variables). Never put API keys in frontend files or commit them.
+**AI question generation:** API keys can be added by the super admin from the system settings page. Set `APP_ENCRYPTION_KEY` in Render to a long random secret; it is required to encrypt saved keys. Existing `GEMINI_API_KEY` and `GROK_API_KEY` environment variables remain supported as a fallback. Never put API keys in frontend files or commit them.
 
 Built by ALSayed Omer - aspiring Computer Science student, Fall 2027.
