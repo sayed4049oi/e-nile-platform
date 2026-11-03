@@ -66,7 +66,7 @@ button:hover { background: var(--primary-light); }
     align-items: center;
     justify-content: center;
     border-radius: 10px;
-    background: rgb(255 255 255 / 0.12);
+    background: rgb(255 255 255 / 0.08);
     text-align: center;
     font-size: 16px;
 }
@@ -89,6 +89,52 @@ button:hover { background: var(--primary-light); }
     font-weight: 700;
 }
 .sidebar-logout:hover { background: #dc2626; }
+.sidebar-profile {
+    display: flex;
+    align-items: center;
+    padding: 10px;
+    margin-bottom: 10px;
+    border: 1px solid rgb(147 197 253 / 0.2);
+    border-radius: 14px;
+    background: rgb(255 255 255 / 0.08);
+}
+.dashboard-stat {
+    padding: 22px;
+    border: 1px solid #e2e8f0;
+    border-radius: 20px;
+    background: #fff;
+    box-shadow: 0 8px 20px rgb(15 23 42 / 0.06);
+}
+.dashboard-stat-icon {
+    display: inline-flex;
+    width: 44px;
+    height: 44px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 13px;
+    font-size: 19px;
+}
+.dashboard-stat p { margin: 14px 0 4px; color: #64748b; font-weight: 700; }
+.dashboard-stat strong { display: block; color: #1e293b; font-size: 30px; margin-bottom: 12px; }
+.dashboard-stat button { width: auto; margin: 0; padding: 7px 12px; color: #1d4ed8; background: #eff6ff; font-size: 12px; }
+.dashboard-action {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    padding: 20px;
+    margin: 0;
+    border: 1px solid #dbeafe;
+    border-radius: 18px;
+    background: #fff;
+    color: #1e3a8a;
+    text-align: right;
+}
+.dashboard-action > i:first-child { font-size: 22px; }
+.dashboard-action span { flex: 1; }
+.dashboard-action b, .dashboard-action small { display: block; }
+.dashboard-action small { margin-top: 4px; color: #64748b; }
+.dashboard-action > i:last-child { color: #60a5fa; }
 
 @media (max-width: 640px) {
     body { font-size: 14px; }
