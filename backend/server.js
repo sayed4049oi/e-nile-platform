@@ -121,6 +121,22 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 30000) {
   finally { clearTimeout(timer); }
 }
 
+async function fetchWithRetry(url, options = {}, attempts = 3) {
+  let lastError;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const response = await fetchWithTimeout(url, options);
+      if (response.status < 500 || attempt === attempts - 1) return response;
+      await new Promise(resolve => setTimeout(resolve, 300 * (attempt + 1)));
+    } catch (error) {
+      lastError = error;
+      if (attempt === attempts - 1) throw error;
+      await new Promise(resolve => setTimeout(resolve, 300 * (attempt + 1)));
+    }
+  }
+  throw lastError || new Error('فشل الاتصال');
+}
+
 const requestBuckets = new Map();
 function rateLimit({ windowMs, max, key = req => req.ip }) {
   return (req, res, next) => {
@@ -233,12 +249,12 @@ ${sourceText}`;
     const selectedModel = model || selectedProvider.model || await discoverModel({ protocol, baseUrl, apiKey });
     const requestPrompt = prompt.replace(`exactly ${count}`, `exactly ${providerCount}`);
     const response = protocol === 'anthropic'
-      ? await fetchWithTimeout(`${baseUrl}/messages`, {
+      ? await fetchWithRetry(`${baseUrl}/messages`, {
         method: 'POST',
         headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: selectedModel, max_tokens: 4096, temperature: 0.2, system: 'Return JSON only.', messages: [{ role: 'user', content: requestPrompt }] })
       })
-      : await fetchWithTimeout(`${baseUrl}/chat/completions`, {
+      : await fetchWithRetry(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: selectedModel, temperature: 0.2, messages: [{ role: 'system', content: 'Return JSON only.' }, { role: 'user', content: requestPrompt }] })
@@ -260,7 +276,7 @@ ${sourceText}`;
 async function discoverModel({ protocol, baseUrl, apiKey }) {
   if (protocol === 'anthropic') throw new Error('حدد موديل Anthropic يدويًا لأن هذا المزود لا يوفر اكتشاف موديلات عامًا');
   if (!apiKey) throw new Error('أضف مفتاح API أو حدد الموديل يدويًا');
-  const response = await fetchWithTimeout(`${baseUrl}/models`, { headers: { Authorization: `Bearer ${apiKey}` } });
+  const response = await fetchWithRetry(`${baseUrl}/models`, { headers: { Authorization: `Bearer ${apiKey}` } });
   if (!response.ok) throw new Error('تعذر اكتشاف موديل مزود الذكاء الاصطناعي');
   const body = await response.json();
   const models = (body.data || []).map(item => item.id).filter(Boolean);
@@ -372,12 +388,12 @@ app.post('/api/ai/test/:provider', superAdminAuth, rateLimit({ windowMs: 60 * 10
     const baseUrl = validateProviderUrl(provider.baseUrl || (protocol === 'anthropic' ? 'https://api.anthropic.com/v1' : 'https://api.openai.com/v1'));
     const model = provider.model || await discoverModel({ protocol, baseUrl, apiKey });
     const response = protocol === 'anthropic'
-      ? await fetchWithTimeout(`${baseUrl}/messages`, {
+      ? await fetchWithRetry(`${baseUrl}/messages`, {
         method: 'POST',
         headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
         body: JSON.stringify({ model, max_tokens: 32, messages: [{ role: 'user', content: 'Reply with the single word OK.' }] })
       })
-      : await fetchWithTimeout(`${baseUrl}/chat/completions`, {
+      : await fetchWithRetry(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ model, max_tokens: 32, messages: [{ role: 'user', content: 'Reply with the single word OK.' }] })
