@@ -75,6 +75,18 @@ const logout = () => { localStorage.clear(); location.reload(); };
 
 // ================= ADMIN =================
 async function renderAdminDashboard(view = 'students', deptId = null, subId = null, roomId = null) {
+    if (view === 'home') {
+        const [depts, subjects, rooms, students] = await Promise.all([
+            fetch(API + '/departments', { headers: authHeaders() }).then(r => r.json()),
+            fetch(API + '/subjects', { headers: authHeaders() }).then(r => r.json()),
+            fetch(API + '/rooms', { headers: authHeaders() }).then(r => r.json()),
+            fetch(API + '/students-list', { headers: authHeaders() }).then(r => r.json())
+        ]);
+        globalDepts = depts;
+        globalSubjects = subjects;
+        globalRooms = rooms;
+        window.dashboardStudentCount = students.reduce((total, department) => total + department.students.length, 0);
+    }
     if (view === 'departments' || view === 'subjects' || view === 'subject-details' || view === 'exam-builder') {
         const [resDepts, resSubs] = await Promise.all([fetch(API + '/departments', { headers: authHeaders() }), fetch(API + '/subjects', { headers: authHeaders() })]);
         globalDepts = await resDepts.json(); globalSubjects = await resSubs.json();
@@ -88,20 +100,21 @@ async function renderAdminDashboard(view = 'students', deptId = null, subId = nu
     const activeDept = globalDepts.find(d => d.id === deptId);
     const activeSubject = globalSubjects.find(s => s.id === subId);
 
-    let headerTitle = view === 'students' ? 'قائمة الطلاب' : view === 'departments' ? 'الأقسام' : view === 'subjects' ? `مواد قسم (${activeDept ? activeDept.name : ''})` : view === 'subject-details' ? `امتحانات مادة (${activeSubject ? activeSubject.name : ''})` : view === 'exam-builder' ? 'ورشة إعداد الامتحان' : view === 'rooms' ? 'إدارة القاعات' : view === 'room-details' ? 'تفاصيل القاعة' : view === 'admins' ? 'إدارة الأدمنز' : 'إعدادات النظام';
+    let headerTitle = view === 'home' ? 'لوحة التحكم' : view === 'students' ? 'قائمة الطلاب' : view === 'departments' ? 'الأقسام' : view === 'subjects' ? `مواد قسم (${activeDept ? activeDept.name : ''})` : view === 'subject-details' ? `امتحانات مادة (${activeSubject ? activeSubject.name : ''})` : view === 'exam-builder' ? 'ورشة إعداد الامتحان' : view === 'rooms' ? 'إدارة القاعات' : view === 'room-details' ? 'تفاصيل القاعة' : view === 'admins' ? 'إدارة الأدمنز' : 'إعدادات النظام';
 
     app.innerHTML = `
     <div class="flex h-screen bg-gray-50 overflow-hidden">
         <aside id="admin-sidebar" class="admin-sidebar bg-primary text-white flex flex-col shadow-2xl">
             <div class="h-20 flex items-center justify-center gap-3 border-b border-blue-800"><img src="logo.jpg" alt="شعار كلية شرق النيل" class="w-12 h-12 object-contain rounded-lg bg-white"><span class="sidebar-label text-xl font-bold">كلية شرق النيل</span></div>
             <nav class="flex-1 p-3 space-y-2">
+                <a title="لوحة التحكم" onclick="renderAdminDashboard('home')" class="sidebar-link ${view==='home' ? 'active' : ''}"><i class="fa-solid fa-chart-pie"></i><span class="sidebar-label">لوحة التحكم</span></a>
                 <a title="قائمة الطلاب" onclick="renderAdminDashboard('students')" class="sidebar-link ${view==='students' ? 'active' : ''}"><i class="fa-solid fa-users"></i><span class="sidebar-label">قائمة الطلاب</span></a>
                 <a title="الأقسام والمواد" onclick="renderAdminDashboard('departments')" class="sidebar-link ${view==='departments' || view==='subjects' || view==='subject-details' || view==='exam-builder' ? 'active' : ''}"><i class="fa-solid fa-building-columns"></i><span class="sidebar-label">الأقسام والمواد</span></a>
                 <a title="كل القاعات" onclick="renderAdminDashboard('rooms')" class="sidebar-link ${view==='rooms' || view==='room-details' ? 'active' : ''}"><i class="fa-solid fa-door-open"></i><span class="sidebar-label">كل القاعات</span></a>
                 ${user.isSuper ? `<a title="إدارة الأدمنز" onclick="renderAdminDashboard('admins')" class="sidebar-link ${view==='admins' ? 'active' : ''}"><i class="fa-solid fa-users-gear"></i><span class="sidebar-label">إدارة الأدمنز</span></a>` : ''}
                 ${user.isSuper ? `<a title="إعدادات النظام" onclick="renderAdminDashboard('settings')" class="sidebar-link danger ${view==='settings' ? 'active' : ''}"><i class="fa-solid fa-gear"></i><span class="sidebar-label">إعدادات النظام</span></a>` : ''}
             </nav>
-            <div class="sidebar-footer p-3 border-t border-blue-800"><div class="flex items-center mb-3"><div class="w-10 h-10 shrink-0 rounded-full bg-blue-400 flex items-center justify-center font-bold text-lg">${user.name[0]}</div><div class="sidebar-label mr-3 min-w-0"><p class="font-bold text-sm truncate">${user.name}</p><p class="text-xs text-blue-300">${user.isSuper ? 'مدير عام' : 'أدمن'}</p></div></div><button onclick="logout()" title="خروج" class="sidebar-logout"><i class="fa-solid fa-right-from-bracket"></i><span class="sidebar-label">خروج</span></button></div>
+            <div class="sidebar-footer p-3 border-t border-blue-800"><div class="sidebar-profile"><div class="w-10 h-10 shrink-0 rounded-full bg-blue-400 flex items-center justify-center font-bold text-lg">${user.name[0]}</div><div class="sidebar-label mr-3 min-w-0"><p class="font-bold text-sm truncate">${user.name}</p><p class="text-xs text-blue-300">${user.isSuper ? 'مدير عام' : 'أدمن'}</p></div></div><button onclick="logout()" title="خروج" class="sidebar-logout"><i class="fa-solid fa-right-from-bracket"></i><span class="sidebar-label">خروج</span></button></div>
         </aside>
         <main class="flex-1 flex flex-col overflow-y-auto">
             <header class="bg-white shadow-sm h-20 flex items-center px-8 justify-between">
@@ -120,7 +133,8 @@ async function renderAdminDashboard(view = 'students', deptId = null, subId = nu
             <div class="p-8" id="admin-content"></div>
         </main>
     </div>`;
-    if(view === 'students') loadStudentsList();
+    if(view === 'home') loadAdminHome();
+    else if(view === 'students') loadStudentsList();
     else if(view === 'departments') loadDepartments();
     else if(view === 'subjects') loadSubjects();
     else if(view === 'subject-details') loadSubjectExams();
@@ -129,6 +143,24 @@ async function renderAdminDashboard(view = 'students', deptId = null, subId = nu
     else if(view === 'room-details') loadRoomDetails();
     else if(view === 'admins') loadAdmins();
     else if(view === 'settings') loadSettings();
+}
+
+function loadAdminHome() {
+    const activeRooms = globalRooms.filter(room => room.isOpen).length;
+    const draftRooms = globalRooms.filter(room => room.status === 'draft').length;
+    document.getElementById('admin-content').innerHTML = `<div class="space-y-8">
+        <div class="rounded-3xl bg-gradient-to-l from-primary to-blue-600 p-8 text-white shadow-xl"><p class="text-blue-100 mb-2">مرحباً بك</p><h3 class="text-3xl font-extrabold text-white mb-2">${user.name}</h3><p class="text-blue-100">إدارة منصة كلية شرق النيل من مكان واحد.</p></div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
+            <div class="dashboard-stat"><span class="dashboard-stat-icon bg-blue-100 text-blue-700"><i class="fa-solid fa-users"></i></span><p>الطلاب</p><strong>${window.dashboardStudentCount || 0}</strong><button onclick="renderAdminDashboard('students')">فتح القائمة</button></div>
+            <div class="dashboard-stat"><span class="dashboard-stat-icon bg-indigo-100 text-indigo-700"><i class="fa-solid fa-building-columns"></i></span><p>الأقسام</p><strong>${globalDepts.length}</strong><button onclick="renderAdminDashboard('departments')">إدارة الأقسام</button></div>
+            <div class="dashboard-stat"><span class="dashboard-stat-icon bg-green-100 text-green-700"><i class="fa-solid fa-door-open"></i></span><p>القاعات المفتوحة</p><strong>${activeRooms}</strong><button onclick="renderAdminDashboard('rooms')">عرض القاعات</button></div>
+            <div class="dashboard-stat"><span class="dashboard-stat-icon bg-amber-100 text-amber-700"><i class="fa-solid fa-file-pen"></i></span><p>المسودات</p><strong>${draftRooms}</strong><button onclick="renderAdminDashboard('rooms')">مراجعة المسودات</button></div>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <button onclick="renderAdminDashboard('departments')" class="dashboard-action"><i class="fa-solid fa-layer-group"></i><span><b>الأقسام والمواد</b><small>${globalDepts.length} أقسام و${globalSubjects.length} مواد</small></span><i class="fa-solid fa-arrow-left"></i></button>
+            <button onclick="renderAdminDashboard('rooms')" class="dashboard-action"><i class="fa-solid fa-calendar-check"></i><span><b>إدارة الامتحانات</b><small>${globalRooms.length} قاعات مسجلة</small></span><i class="fa-solid fa-arrow-left"></i></button>
+        </div>
+    </div>`;
 }
 
 // ================= SETTINGS & STUDENTS & DEPTS =================
