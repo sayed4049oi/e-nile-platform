@@ -45,11 +45,36 @@ const Student = mongoose.model('Student', new mongoose.Schema({ name: String, un
 const DeptStudent = mongoose.model('DeptStudent', new mongoose.Schema({ departmentId: String, studentId: String }));
 const RoomStudent = mongoose.model('RoomStudent', new mongoose.Schema({ roomId: String, studentId: String }));
 const Attempt = mongoose.model('Attempt', new mongoose.Schema({ roomId: String, studentId: String, answers: Object, violations: Array, submittedAt: Date, score: Number, total: Number }));
+const AiConfig = mongoose.model('AiConfig', new mongoose.Schema({
+  defaultProvider: { type: String, enum: ['gemini', 'grok'], default: 'gemini' },
+  gemini: { model: String, encryptedKey: String, last4: String, updatedAt: Date },
+  grok: { model: String, encryptedKey: String, last4: String, updatedAt: Date }
+}));
 
 const JWT_SECRET = process.env.JWT_SECRET || 'secret';
 const uuid = () => crypto.randomUUID();
 const AI_PROVIDER = process.env.AI_PROVIDER || 'gemini';
 const AI_MODEL = process.env.AI_MODEL || (AI_PROVIDER === 'grok' ? 'grok-2-latest' : 'gemini-2.0-flash');
+const ENCRYPTION_KEY = process.env.APP_ENCRYPTION_KEY;
+
+function encryptionKey() {
+  if (!ENCRYPTION_KEY) throw new Error('APP_ENCRYPTION_KEY غير مضبوط في الخادم');
+  return crypto.createHash('sha256').update(ENCRYPTION_KEY).digest();
+}
+
+function encryptSecret(value) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', encryptionKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
+  return [iv.toString('base64url'), cipher.getAuthTag().toString('base64url'), encrypted.toString('base64url')].join('.');
+}
+
+function decryptSecret(value) {
+  const [iv, tag, encrypted] = String(value).split('.');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', encryptionKey(), Buffer.from(iv, 'base64url'));
+  decipher.setAuthTag(Buffer.from(tag, 'base64url'));
+  return Buffer.concat([decipher.update(Buffer.from(encrypted, 'base64url')), decipher.final()]).toString('utf8');
+}
 
 // ===== Middlewares =====
 const auth = (req, res, next) => {
@@ -60,6 +85,13 @@ const auth = (req, res, next) => {
 const adminAuth = (req, res, next) => {
   auth(req, res, () => {
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'صلاحية إدارية مطلوبة' });
+    next();
+  });
+};
+const superAdminAuth = (req, res, next) => {
+  adminAuth(req, res, async () => {
+    const admin = await Admin.findById(req.user.id).select('isSuper');
+    if (!admin?.isSuper) return res.status(403).json({ error: 'صلاحية المدير العام مطلوبة' });
     next();
   });
 };
@@ -95,8 +127,11 @@ function normalizeQuestions(payload, requestedCount) {
 }
 
 async function generateWithAI({ provider, model, sourceText, count, type, difficulty, language, existingQuestions, instruction }) {
-  const selectedProvider = provider || AI_PROVIDER;
-  const selectedModel = model || AI_MODEL;
+  const stored = await AiConfig.findOne().lean();
+  const selectedProvider = provider || stored?.defaultProvider || AI_PROVIDER;
+  const providerConfig = stored?.[selectedProvider];
+  const selectedModel = model || providerConfig?.model || (selectedProvider === AI_PROVIDER ? AI_MODEL : selectedProvider === 'grok' ? 'grok-2-latest' : 'gemini-2.0-flash');
+  const configuredKey = providerConfig?.encryptedKey ? decryptSecret(providerConfig.encryptedKey) : null;
   const format = type === 'essay'
     ? 'essay'
     : type === 'tf' ? 'true/false' : 'multiple choice';
@@ -110,15 +145,17 @@ Source material:
 ${sourceText}`;
   let response;
   if (selectedProvider === 'grok') {
-    if (!process.env.GROK_API_KEY) throw new Error('GROK_API_KEY غير مضبوط في الخادم');
+    const apiKey = configuredKey || process.env.GROK_API_KEY;
+    if (!apiKey) throw new Error('مفتاح Grok غير مضبوط من الإعدادات');
     response = await fetch('https://api.x.ai/v1/chat/completions', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${process.env.GROK_API_KEY}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: selectedModel, temperature: 0.2, messages: [{ role: 'system', content: 'Return JSON only.' }, { role: 'user', content: prompt }] })
     });
   } else {
-    if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY غير مضبوط في الخادم');
-    response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(selectedModel)}:generateContent?key=${encodeURIComponent(process.env.GEMINI_API_KEY)}`, {
+    const apiKey = configuredKey || process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new Error('مفتاح Gemini غير مضبوط من الإعدادات');
+    response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(selectedModel)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ generationConfig: { temperature: 0.2, responseMimeType: 'application/json' }, contents: [{ parts: [{ text: prompt }] }] })
@@ -152,8 +189,48 @@ app.post('/api/auth/student/enter', async (req, res) => {
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, name: 'كلية شرق النيل' }));
 
-app.get('/api/ai/config', adminAuth, (_req, res) => {
-  res.json({ provider: AI_PROVIDER, model: AI_MODEL, configured: Boolean(process.env.GEMINI_API_KEY || process.env.GROK_API_KEY) });
+app.get('/api/ai/config', superAdminAuth, async (_req, res) => {
+  const stored = await AiConfig.findOne().lean();
+  res.json({
+    provider: stored?.defaultProvider || AI_PROVIDER,
+    model: stored?.[stored?.defaultProvider || AI_PROVIDER]?.model || AI_MODEL,
+    configured: Boolean(stored?.gemini?.encryptedKey || stored?.grok?.encryptedKey || process.env.GEMINI_API_KEY || process.env.GROK_API_KEY),
+    providers: {
+      gemini: { configured: Boolean(stored?.gemini?.encryptedKey || process.env.GEMINI_API_KEY), model: stored?.gemini?.model || 'gemini-2.0-flash', last4: stored?.gemini?.last4 || null },
+      grok: { configured: Boolean(stored?.grok?.encryptedKey || process.env.GROK_API_KEY), model: stored?.grok?.model || 'grok-2-latest', last4: stored?.grok?.last4 || null }
+    }
+  });
+});
+
+app.put('/api/ai/config', superAdminAuth, async (req, res) => {
+  try {
+    const provider = req.body.provider;
+    const model = String(req.body.model || '').trim();
+    const apiKey = String(req.body.apiKey || '').trim();
+    if (!['gemini', 'grok'].includes(provider)) return res.status(400).json({ error: 'المزود غير صالح' });
+    if (!model) return res.status(400).json({ error: 'اسم الموديل مطلوب' });
+    if (!apiKey && !process.env[provider === 'gemini' ? 'GEMINI_API_KEY' : 'GROK_API_KEY']) {
+      return res.status(400).json({ error: 'مفتاح API مطلوب' });
+    }
+    const update = { defaultProvider: provider, [`${provider}.model`]: model };
+    if (apiKey) {
+      update[`${provider}.encryptedKey`] = encryptSecret(apiKey);
+      update[`${provider}.last4`] = apiKey.slice(-4);
+      update[`${provider}.updatedAt`] = new Date();
+    }
+    await AiConfig.findOneAndUpdate({}, { $set: update }, { upsert: true, new: true });
+    res.json({ ok: true, provider, model, last4: apiKey ? apiKey.slice(-4) : null });
+  } catch (error) {
+    console.error('AI config save failed:', error);
+    res.status(500).json({ error: error.message || 'تعذر حفظ إعدادات الذكاء الاصطناعي' });
+  }
+});
+
+app.delete('/api/ai/config/:provider', superAdminAuth, async (req, res) => {
+  if (!['gemini', 'grok'].includes(req.params.provider)) return res.status(400).json({ error: 'المزود غير صالح' });
+  const update = { [`${req.params.provider}.encryptedKey`]: null, [`${req.params.provider}.last4`]: null, [`${req.params.provider}.updatedAt`]: new Date() };
+  await AiConfig.findOneAndUpdate({}, { $set: update }, { upsert: true });
+  res.json({ ok: true });
 });
 
 app.post('/api/ai/generate-questions', adminAuth, async (req, res) => {
