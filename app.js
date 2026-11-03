@@ -75,6 +75,7 @@ const logout = () => { localStorage.clear(); location.reload(); };
 
 // ================= ADMIN =================
 async function renderAdminDashboard(view = 'students', deptId = null, subId = null, roomId = null) {
+    const sidebarMode = localStorage.getItem('adminSidebarMode') || 'panel';
     if (view === 'home') {
         const [depts, subjects, rooms, students] = await Promise.all([
             fetch(API + '/departments', { headers: authHeaders() }).then(r => r.json()),
@@ -104,7 +105,7 @@ async function renderAdminDashboard(view = 'students', deptId = null, subId = nu
 
     app.innerHTML = `
     <div class="flex h-screen bg-gray-50 overflow-hidden">
-        <aside id="admin-sidebar" class="admin-sidebar bg-primary text-white flex flex-col shadow-2xl">
+        <aside id="admin-sidebar" class="admin-sidebar ${sidebarMode === 'icons' ? 'sidebar-icons' : ''} bg-primary text-white flex flex-col shadow-2xl">
             <div class="h-20 flex items-center justify-center gap-3 border-b border-blue-800"><img src="logo.jpg" alt="شعار كلية شرق النيل" class="w-12 h-12 object-contain rounded-lg bg-white"><span class="sidebar-label text-xl font-bold">كلية شرق النيل</span></div>
             <nav class="flex-1 p-3 space-y-2">
                 <a title="لوحة التحكم" onclick="renderAdminDashboard('home')" class="sidebar-link ${view==='home' ? 'active' : ''}"><i class="fa-solid fa-chart-pie"></i><span class="sidebar-label">لوحة التحكم</span></a>
@@ -166,6 +167,7 @@ function loadAdminHome() {
 // ================= SETTINGS & STUDENTS & DEPTS =================
 function loadSettings() {
     document.getElementById('admin-content').innerHTML = `<div class="max-w-3xl mx-auto space-y-6">
+        <div class="bg-white border border-blue-200 rounded-2xl p-8 shadow-sm"><h3 class="text-xl font-bold text-gray-800 mb-3"><i class="fa-solid fa-display text-primary ml-2"></i> شكل لوحة الإدارة</h3><p class="text-sm text-gray-500 mb-4">اختر هل تظهر القائمة الجانبية كلوحة كاملة أم كأيقونات مختصرة.</p><div class="grid grid-cols-1 md:grid-cols-2 gap-3"><button onclick="setSidebarMode('panel')" class="sidebar-mode-option ${localStorage.getItem('adminSidebarMode') !== 'icons' ? 'selected' : ''}"><i class="fa-solid fa-table-columns"></i><span><b>لوحة كاملة</b><small>الأيقونة مع اسم القسم</small></span></button><button onclick="setSidebarMode('icons')" class="sidebar-mode-option ${localStorage.getItem('adminSidebarMode') === 'icons' ? 'selected' : ''}"><i class="fa-solid fa-icons"></i><span><b>أيقونات فقط</b><small>مربعات الأيقونات لتوفير المساحة</small></span></button></div></div>
         <div class="bg-white border border-gray-200 rounded-2xl p-8 shadow-sm"><h3 class="text-xl font-bold text-gray-800 mb-4"><i class="fa-solid fa-download text-primary ml-2"></i> النسخ الاحتياطي والاسترجاع</h3><div class="flex flex-wrap gap-3"><button onclick="downloadBackup()" class="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold">تحميل نسخة احتياطية</button><button onclick="restoreBackup()" class="bg-green-600 text-white px-6 py-3 rounded-xl font-bold">استرجاع نسخة</button></div><p class="text-sm text-gray-500 mt-3">الاسترجاع يستبدل البيانات الحالية بالكامل.</p></div>
         <div class="bg-purple-50 border border-purple-200 rounded-2xl p-8 shadow-sm"><h3 class="text-xl font-bold text-purple-800 mb-3"><i class="fa-solid fa-wand-magic-sparkles ml-2"></i> إعدادات الذكاء الاصطناعي</h3><p id="ai-config-status" class="text-sm text-purple-900 mb-4">جاري قراءة إعدادات الخادم...</p><div class="grid md:grid-cols-2 gap-4"><div class="bg-white rounded-xl p-4 border"><h4 class="font-bold mb-2">Gemini</h4><p id="gemini-key-status" class="text-xs text-gray-500 mb-3">غير مضبوط</p><button onclick="editAIConfig('gemini')" class="bg-purple-600 text-white px-3 py-2 rounded-lg text-sm font-bold">إضافة/تعديل المفتاح</button><button onclick="deleteAIConfig('gemini')" class="mr-2 bg-red-50 text-red-600 px-3 py-2 rounded-lg text-sm font-bold">مسح</button></div><div class="bg-white rounded-xl p-4 border"><h4 class="font-bold mb-2">Grok</h4><p id="grok-key-status" class="text-xs text-gray-500 mb-3">غير مضبوط</p><button onclick="editAIConfig('grok')" class="bg-purple-600 text-white px-3 py-2 rounded-lg text-sm font-bold">إضافة/تعديل المفتاح</button><button onclick="deleteAIConfig('grok')" class="mr-2 bg-red-50 text-red-600 px-3 py-2 rounded-lg text-sm font-bold">مسح</button></div></div><p class="text-xs text-gray-600 mt-3">المفتاح يُرسل عبر اتصال آمن ويُحفظ مشفراً في قاعدة البيانات. لا يتم عرضه كاملاً مرة أخرى.</p></div>
         <div class="bg-red-50 border border-red-200 rounded-2xl p-8 shadow-sm"><h3 class="text-2xl font-bold text-red-700 mb-4">منطقة الخطر</h3><button onclick="confirmSystemWipe()" class="bg-red-600 text-white px-6 py-3 rounded-xl font-bold">حذف كل البيانات</button></div></div>`;
@@ -178,6 +180,11 @@ function loadSettings() {
             if (el && item) el.textContent = item.configured ? `جاهز | الموديل: ${item.model}${item.last4 ? ` | ينتهي بـ ****${item.last4}` : ''}` : 'غير مضبوط';
         });
     }).catch(() => {});
+}
+function setSidebarMode(mode) {
+    if (!['panel', 'icons'].includes(mode)) return;
+    localStorage.setItem('adminSidebarMode', mode);
+    renderAdminDashboard('settings');
 }
 async function editAIConfig(provider) {
     const defaults = provider === 'grok' ? 'grok-2-latest' : 'gemini-2.0-flash';
