@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>كلية شرق النيل | نظام الامتحانات الذكية</title>
     <link rel="icon" type="image/jpeg" href="logo.jpg">
+    <link rel="stylesheet" href="style.css">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.19.3/package/dist/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
@@ -38,7 +39,11 @@
 </head>
 <body class="text-gray-800">
     <div id="app"></div>
+    <div id="connection-status" class="hidden fixed bottom-4 right-4 z-[10000] rounded-xl px-4 py-3 text-sm font-bold shadow-lg"></div>
     <video id="cam-feed" class="camera-preview hidden" autoplay muted></video>
     <script src="app.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+    </script>
 </body>
 </html>
