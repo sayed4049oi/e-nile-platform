@@ -112,7 +112,6 @@ async function renderAdminDashboard(view = 'students', deptId = null, subId = nu
                 <a title="قائمة الطلاب" onclick="renderAdminDashboard('students')" class="sidebar-link ${view==='students' ? 'active' : ''}"><i class="fa-solid fa-users"></i><span class="sidebar-label">قائمة الطلاب</span></a>
                 <a title="الأقسام والمواد" onclick="renderAdminDashboard('departments')" class="sidebar-link ${view==='departments' || view==='subjects' || view==='subject-details' || view==='exam-builder' ? 'active' : ''}"><i class="fa-solid fa-building-columns"></i><span class="sidebar-label">الأقسام والمواد</span></a>
                 <a title="كل القاعات" onclick="renderAdminDashboard('rooms')" class="sidebar-link ${view==='rooms' || view==='room-details' ? 'active' : ''}"><i class="fa-solid fa-door-open"></i><span class="sidebar-label">كل القاعات</span></a>
-                ${user.isSuper ? `<a title="إدارة الأدمنز" onclick="renderAdminDashboard('admins')" class="sidebar-link ${view==='admins' ? 'active' : ''}"><i class="fa-solid fa-users-gear"></i><span class="sidebar-label">إدارة الأدمنز</span></a>` : ''}
                 ${user.isSuper ? `<a title="إعدادات النظام" onclick="renderAdminDashboard('settings')" class="sidebar-link danger ${view==='settings' ? 'active' : ''}"><i class="fa-solid fa-gear"></i><span class="sidebar-label">إعدادات النظام</span></a>` : ''}
             </nav>
             <div class="sidebar-footer p-3 border-t border-blue-800"><div class="sidebar-profile"><div class="w-10 h-10 shrink-0 rounded-full bg-blue-400 flex items-center justify-center font-bold text-lg">${user.name[0]}</div><div class="sidebar-label mr-3 min-w-0"><p class="font-bold text-sm truncate">${user.name}</p><p class="text-xs text-blue-300">${user.isSuper ? 'مدير عام' : 'أدمن'}</p></div></div><button onclick="logout()" title="خروج" class="sidebar-logout"><i class="fa-solid fa-right-from-bracket"></i><span class="sidebar-label">خروج</span></button></div>
@@ -169,16 +168,15 @@ function loadSettings() {
     document.getElementById('admin-content').innerHTML = `<div class="max-w-3xl mx-auto space-y-6">
         <div class="bg-white border border-blue-200 rounded-2xl p-8 shadow-sm"><h3 class="text-xl font-bold text-gray-800 mb-3"><i class="fa-solid fa-display text-primary ml-2"></i> شكل لوحة الإدارة</h3><p class="text-sm text-gray-500 mb-4">اختر هل تظهر القائمة الجانبية كلوحة كاملة أم كأيقونات مختصرة.</p><div class="grid grid-cols-1 md:grid-cols-2 gap-3"><button onclick="setSidebarMode('panel')" class="sidebar-mode-option ${localStorage.getItem('adminSidebarMode') !== 'icons' ? 'selected' : ''}"><i class="fa-solid fa-table-columns"></i><span><b>لوحة كاملة</b><small>الأيقونة مع اسم القسم</small></span></button><button onclick="setSidebarMode('icons')" class="sidebar-mode-option ${localStorage.getItem('adminSidebarMode') === 'icons' ? 'selected' : ''}"><i class="fa-solid fa-icons"></i><span><b>أيقونات فقط</b><small>مربعات الأيقونات لتوفير المساحة</small></span></button></div></div>
         <div class="bg-white border border-gray-200 rounded-2xl p-8 shadow-sm"><h3 class="text-xl font-bold text-gray-800 mb-4"><i class="fa-solid fa-download text-primary ml-2"></i> النسخ الاحتياطي والاسترجاع</h3><div class="flex flex-wrap gap-3"><button onclick="downloadBackup()" class="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold">تحميل نسخة احتياطية</button><button onclick="restoreBackup()" class="bg-green-600 text-white px-6 py-3 rounded-xl font-bold">استرجاع نسخة</button></div><p class="text-sm text-gray-500 mt-3">الاسترجاع يستبدل البيانات الحالية بالكامل.</p></div>
-        <div class="bg-purple-50 border border-purple-200 rounded-2xl p-8 shadow-sm"><h3 class="text-xl font-bold text-purple-800 mb-3"><i class="fa-solid fa-wand-magic-sparkles ml-2"></i> إعدادات الذكاء الاصطناعي</h3><p id="ai-config-status" class="text-sm text-purple-900 mb-4">جاري قراءة إعدادات الخادم...</p><div class="grid md:grid-cols-2 gap-4"><div class="bg-white rounded-xl p-4 border"><h4 class="font-bold mb-2">Gemini</h4><p id="gemini-key-status" class="text-xs text-gray-500 mb-3">غير مضبوط</p><button onclick="editAIConfig('gemini')" class="bg-purple-600 text-white px-3 py-2 rounded-lg text-sm font-bold">إضافة/تعديل المفتاح</button><button onclick="deleteAIConfig('gemini')" class="mr-2 bg-red-50 text-red-600 px-3 py-2 rounded-lg text-sm font-bold">مسح</button></div><div class="bg-white rounded-xl p-4 border"><h4 class="font-bold mb-2">Grok</h4><p id="grok-key-status" class="text-xs text-gray-500 mb-3">غير مضبوط</p><button onclick="editAIConfig('grok')" class="bg-purple-600 text-white px-3 py-2 rounded-lg text-sm font-bold">إضافة/تعديل المفتاح</button><button onclick="deleteAIConfig('grok')" class="mr-2 bg-red-50 text-red-600 px-3 py-2 rounded-lg text-sm font-bold">مسح</button></div></div><p class="text-xs text-gray-600 mt-3">المفتاح يُرسل عبر اتصال آمن ويُحفظ مشفراً في قاعدة البيانات. لا يتم عرضه كاملاً مرة أخرى.</p></div>
+        ${user.isSuper ? `<div class="bg-white border border-blue-200 rounded-2xl p-8 shadow-sm"><h3 class="text-xl font-bold text-gray-800 mb-3"><i class="fa-solid fa-users-gear text-primary ml-2"></i> إدارة الأدمنز</h3><p class="text-sm text-gray-500 mb-4">إضافة وتعديل وحذف حسابات الأدمنز من إعدادات النظام.</p><button onclick="renderAdminDashboard('admins')" class="bg-primary text-white px-5 py-3 rounded-xl font-bold">فتح إدارة الأدمنز</button></div>` : ''}
+        <div class="bg-purple-50 border border-purple-200 rounded-2xl p-8 shadow-sm"><div class="flex items-center justify-between gap-3 mb-3"><h3 class="text-xl font-bold text-purple-800"><i class="fa-solid fa-wand-magic-sparkles ml-2"></i> مزودو الذكاء الاصطناعي</h3><button onclick="editAIConfig()" class="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-bold"><i class="fa-solid fa-plus ml-1"></i> إضافة مزود</button></div><p id="ai-config-status" class="text-sm text-purple-900 mb-4">جاري قراءة إعدادات الخادم...</p><div id="ai-providers-list" class="grid md:grid-cols-2 gap-4"></div><p class="text-xs text-gray-600 mt-3">أضف أي مزود يدعم OpenAI-compatible أو Gemini. المفاتيح مشفرة ولا تظهر كاملة، والموديل اختياري وسيُكتشف تلقائياً عند تركه فارغاً.</p></div>
         <div class="bg-red-50 border border-red-200 rounded-2xl p-8 shadow-sm"><h3 class="text-2xl font-bold text-red-700 mb-4">منطقة الخطر</h3><button onclick="confirmSystemWipe()" class="bg-red-600 text-white px-6 py-3 rounded-xl font-bold">حذف كل البيانات</button></div></div>`;
     fetch(API + '/ai/config', { headers: authHeaders() }).then(res => res.json()).then(config => {
+        window.aiProviders = config.providers || [];
         const status = document.getElementById('ai-config-status');
-        if (status) status.textContent = config.configured ? `المزود: ${config.provider} | الموديل: ${config.model} | الحالة: جاهز` : 'لم يتم ضبط أي مفتاح API بعد.';
-        ['gemini', 'grok'].forEach(provider => {
-            const item = config.providers?.[provider];
-            const el = document.getElementById(`${provider}-key-status`);
-            if (el && item) el.textContent = item.configured ? `جاهز | الموديل: ${item.model}${item.last4 ? ` | ينتهي بـ ****${item.last4}` : ''}` : 'غير مضبوط';
-        });
+        if (status) status.textContent = config.configured ? `${config.providers.length} مزود جاهز` : 'لم يتم ضبط أي مفتاح API بعد.';
+        const list = document.getElementById('ai-providers-list');
+        if (list) list.innerHTML = (config.providers || []).map(item => `<div class="bg-white rounded-xl p-4 border"><div class="flex justify-between gap-2"><h4 class="font-bold">${item.name}</h4><span class="text-xs ${item.enabled ? 'text-green-600' : 'text-gray-400'}">${item.enabled ? 'مفعل' : 'متوقف'}</span></div><p class="text-xs text-gray-500 mt-2">${item.protocol === 'gemini' ? 'Gemini API' : 'OpenAI-compatible'} | ${item.model || 'الموديل تلقائي'}</p><p class="text-xs text-gray-500 mb-3">${item.last4 ? `المفتاح ينتهي بـ ****${item.last4}` : 'مفتاح مضبوط'}</p><button onclick="editAIConfig('${item.id}')" class="bg-purple-600 text-white px-3 py-2 rounded-lg text-sm font-bold">تعديل</button><button onclick="deleteAIConfig('${item.id}')" class="mr-2 bg-red-50 text-red-600 px-3 py-2 rounded-lg text-sm font-bold">مسح</button></div>`).join('') || '<p class="text-sm text-gray-500">لا توجد مزودات.</p>';
     }).catch(() => {});
 }
 function setSidebarMode(mode) {
@@ -186,17 +184,17 @@ function setSidebarMode(mode) {
     localStorage.setItem('adminSidebarMode', mode);
     renderAdminDashboard('settings');
 }
-async function editAIConfig(provider) {
-    const defaults = provider === 'grok' ? 'grok-2-latest' : 'gemini-2.0-flash';
+async function editAIConfig(providerId = '') {
+    const current = (window.aiProviders || []).find(item => item.id === providerId) || {};
     const result = await Swal.fire({
-        title: `إعداد ${provider === 'grok' ? 'Grok' : 'Gemini'}`,
-        html: `<input id="ai-model-input" class="swal2-input" value="${defaults}" placeholder="اسم الموديل"><input id="ai-key-input" type="password" class="swal2-input" placeholder="مفتاح API الجديد"><p class="text-xs text-gray-500">اترك المفتاح فارغاً للاحتفاظ بالمفتاح الحالي.</p>`,
+        title: current.id ? 'تعديل مزود الذكاء الاصطناعي' : 'إضافة مزود ذكاء اصطناعي',
+        html: `<input id="ai-name-input" class="swal2-input" value="${current.name || ''}" placeholder="اسم المزود"><select id="ai-protocol-input" class="swal2-select"><option value="openai" ${current.protocol !== 'gemini' ? 'selected' : ''}>OpenAI-compatible</option><option value="gemini" ${current.protocol === 'gemini' ? 'selected' : ''}>Gemini API</option></select><input id="ai-url-input" class="swal2-input" value="${current.baseUrl || 'https://api.openai.com/v1'}" placeholder="عنوان API الأساسي"><input id="ai-model-input" class="swal2-input" value="${current.model || ''}" placeholder="الموديل (اختياري للاكتشاف التلقائي)"><input id="ai-key-input" type="password" class="swal2-input" placeholder="${current.id ? 'مفتاح API الجديد (اختياري)' : 'مفتاح API'}"><p class="text-xs text-gray-500">اترك الموديل فارغاً ليكتشف الخادم موديلًا مناسباً تلقائياً.</p>`,
         showCancelButton: true,
         confirmButtonText: 'حفظ مشفراً',
-        preConfirm: () => ({ model: document.getElementById('ai-model-input').value.trim(), apiKey: document.getElementById('ai-key-input').value.trim() })
+        preConfirm: () => ({ id: current.id, name: document.getElementById('ai-name-input').value.trim(), protocol: document.getElementById('ai-protocol-input').value, baseUrl: document.getElementById('ai-url-input').value.trim(), model: document.getElementById('ai-model-input').value.trim(), apiKey: document.getElementById('ai-key-input').value.trim() })
     });
     if (!result.isConfirmed) return;
-    const response = await fetch(API + '/ai/config', { method: 'PUT', headers: authHeaders(), body: JSON.stringify({ provider, ...result.value }) });
+    const response = await fetch(API + '/ai/config', { method: 'PUT', headers: authHeaders(), body: JSON.stringify(result.value) });
     const data = await response.json();
     if (!response.ok) return Swal.fire('خطأ', data.error || 'تعذر حفظ الإعدادات', 'error');
     showToast('تم حفظ إعدادات الذكاء الاصطناعي بشكل مشفر');
@@ -543,14 +541,21 @@ async function extractAIFileText(file) {
 async function openAIQuestionsModal(roomId) {
     const room = globalRooms.find(r => r.id === roomId);
     if (!room) return;
+    if (!window.aiProviders) {
+        const configResponse = await fetch(API + '/ai/config', { headers: authHeaders() });
+        if (configResponse.ok) window.aiProviders = (await configResponse.json()).providers || [];
+    }
+    const providers = (window.aiProviders || []).filter(item => item.configured && item.enabled !== false);
+    if (!providers.length) return Swal.fire('لا توجد مزودات', 'أضف مفتاح API من إعدادات النظام أولاً.', 'warning');
+    const providerOptions = providers.map(item => `<option value="${item.id}" data-model="${item.model || ''}">${item.name}</option>`).join('');
     Swal.fire({
         title: 'إنشاء أسئلة بالذكاء الاصطناعي',
         width: '720px',
         html: `<div class="text-right space-y-3">
             <div class="bg-purple-50 text-purple-900 p-3 rounded-xl text-sm">المفاتيح محفوظة في الخادم. لن يتم إرسالها إلى المتصفح أو تخزينها في المشروع.</div>
             <div class="grid grid-cols-2 gap-3">
-                <select id="ai-provider" class="swal2-select" onchange="document.getElementById('ai-model').value=this.value==='grok'?'grok-2-latest':'gemini-2.0-flash'"><option value="gemini">Gemini</option><option value="grok">Grok</option></select>
-                <input id="ai-model" class="swal2-input" value="gemini-2.0-flash" placeholder="اسم الموديل">
+                <select id="ai-provider" class="swal2-select" onchange="document.getElementById('ai-model').value=this.options[this.selectedIndex].dataset.model || ''">${providerOptions}</select>
+                <input id="ai-model" class="swal2-input" placeholder="اسم الموديل (اختياري)">
                 <input id="ai-count" type="number" min="1" max="50" value="10" class="swal2-input" placeholder="عدد الأسئلة">
                 <select id="ai-type" class="swal2-select"><option value="mcq">اختيار من متعدد</option><option value="tf">صح أو خطأ</option><option value="essay">مقالية</option></select>
                 <select id="ai-difficulty" class="swal2-select"><option value="متوسط">متوسط</option><option value="سهل">سهل</option><option value="صعب">صعب</option></select>
