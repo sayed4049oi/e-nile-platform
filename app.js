@@ -74,13 +74,6 @@ async function doLogin(type) {
 const logout = () => { localStorage.clear(); location.reload(); };
 
 // ================= ADMIN =================
-function toggleSidebar() {
-    const sidebar = document.getElementById('admin-sidebar');
-    if (!sidebar) return;
-    sidebar.classList.toggle('collapsed');
-    localStorage.setItem('adminSidebarCollapsed', sidebar.classList.contains('collapsed') ? '1' : '0');
-}
-
 async function renderAdminDashboard(view = 'students', deptId = null, subId = null, roomId = null) {
     if (view === 'departments' || view === 'subjects' || view === 'subject-details' || view === 'exam-builder') {
         const [resDepts, resSubs] = await Promise.all([fetch(API + '/departments', { headers: authHeaders() }), fetch(API + '/subjects', { headers: authHeaders() })]);
@@ -100,7 +93,7 @@ async function renderAdminDashboard(view = 'students', deptId = null, subId = nu
     app.innerHTML = `
     <div class="flex h-screen bg-gray-50 overflow-hidden">
         <aside id="admin-sidebar" class="admin-sidebar bg-primary text-white flex flex-col shadow-2xl">
-            <div class="h-20 flex items-center justify-center gap-3 border-b border-blue-800 relative"><img src="logo.jpg" alt="شعار كلية شرق النيل" class="w-12 h-12 object-contain rounded-lg bg-white"><span class="sidebar-label text-xl font-bold">كلية شرق النيل</span><button onclick="toggleSidebar()" title="توسيع أو تصغير القائمة" class="sidebar-toggle"><i class="fa-solid fa-angles-left"></i></button></div>
+            <div class="h-20 flex items-center justify-center gap-3 border-b border-blue-800"><img src="logo.jpg" alt="شعار كلية شرق النيل" class="w-12 h-12 object-contain rounded-lg bg-white"><span class="sidebar-label text-xl font-bold">كلية شرق النيل</span></div>
             <nav class="flex-1 p-3 space-y-2">
                 <a title="قائمة الطلاب" onclick="renderAdminDashboard('students')" class="sidebar-link ${view==='students' ? 'active' : ''}"><i class="fa-solid fa-users"></i><span class="sidebar-label">قائمة الطلاب</span></a>
                 <a title="الأقسام والمواد" onclick="renderAdminDashboard('departments')" class="sidebar-link ${view==='departments' || view==='subjects' || view==='subject-details' || view==='exam-builder' ? 'active' : ''}"><i class="fa-solid fa-building-columns"></i><span class="sidebar-label">الأقسام والمواد</span></a>
@@ -127,8 +120,6 @@ async function renderAdminDashboard(view = 'students', deptId = null, subId = nu
             <div class="p-8" id="admin-content"></div>
         </main>
     </div>`;
-    if (localStorage.getItem('adminSidebarCollapsed') === '1') document.getElementById('admin-sidebar')?.classList.add('collapsed');
-
     if(view === 'students') loadStudentsList();
     else if(view === 'departments') loadDepartments();
     else if(view === 'subjects') loadSubjects();
